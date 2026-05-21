@@ -1,0 +1,27 @@
+# Caddy reverse proxy for the platform.
+# Terminates TLS (Let's Encrypt) and front-doors every gated subdomain,
+# consulting Authelia on each request via forward_auth. Started by
+# bootstrap/06-caddy.sh, which renders Caddyfile from Caddyfile.template.
+#
+# host networking so Caddy can reach 127.0.0.1:<port> on the host where the
+# dashboards are bound, and bind directly to 80/443. The platform dashboard
+# (platform/dashboard/) is bind-mounted read-only and served as static files.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../dashboard:/srv/dashboard:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 128m
+
+volumes:
+  caddy_data:
+  caddy_config:

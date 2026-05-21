@@ -1,0 +1,231 @@
+# infra
+
+The platform layer. Takes a bare Ubuntu 24.04 VPS to a fully provisioned,
+hardened, observable server capable of hosting any application stack.
+
+This repo is forkable. It bootstraps **your** VPS with **your** domain and
+**your** secrets. Nothing here is tied to a specific provider or product.
+
+---
+
+## Quickstart — launch on a fresh VPS
+
+Land on a new Ubuntu 24.04 VPS and you're operational in ~10 minutes. The
+steps below are the whole procedure.
+
+**Before you start, you need:**
+
+- A VPS (Ubuntu 24.04) with an admin (non-root) user that has SSH key access
+  and `sudo`.
+- A domain you control, with DNS A records pointing at the server's public
+  IP: the apex `<domain>` itself, plus `auth.<domain>`, `claude.<domain>`,
+  `dashboard.<domain>`, `dozzle.<domain>`, `glances.<domain>`,
+  `ntopng.<domain>`, and `grafana.<domain>` on the full profile. A wildcard
+  `*.<domain>` covers the subdomains; the apex still needs its own A record.
+  *(Optional — skip if you'll only reach dashboards via SSH tunnel.)*
+- (Optional) An Anthropic API key for non-interactive Claude Code auth.
+
+**Steps:**
+
+```bash
+# 1. Get the repo onto the server at /opt/infra.
+rsync -a --exclude .git ./ <admin>@<server>:/tmp/infra-stage/
+ssh <admin>@<server> 'sudo mv /tmp/infra-stage /opt/infra'
+
+# 2. SSH in and create .env from the template (see "Environment" below).
+ssh <admin>@<server>
+sudo -i
+cd /opt/infra
+cp .env.example .env
+chmod 600 .env
+vi .env
+
+# 3. Run the orchestrator. Idempotent, structured logs in /var/log/infra/.
+./bootstrap/bootstrap.sh
+
+# 4. Verify.
+./bootstrap/99-verify.sh
+```
+
+After the firewall step, SSH is rate-limited by UFW (six attempts per
+30 seconds drops connections from your IP). If your laptop trips this,
+you'll have to wait it out or use the provider web console.
+
+---
+
+## Environment variables (`.env`)
+
+Copy [`.env.example`](.env.example) → `.env` and fill it on the server.
+`.env` is gitignored — keep real values in your own secret store (password
+manager, vault, secrets manager, private spreadsheet, whatever fits).
+
+**Required to bootstrap:**
+
+| Variable | What it is |
+|---|---|
+| `SERVER_ADMIN_USER` | The non-root admin user (e.g. `admin`). **Must not be `root`.** |
+| `OBSERVABILITY_PROFILE` | `lightweight` (~1 GiB RAM) or `full` (≥ 2 GiB RAM). |
+
+**Required if exposing dashboards publicly via Caddy:**
+
+| Variable | What it is |
+|---|---|
+| `PRIMARY_DOMAIN` | Domain Caddy serves dashboards under (e.g. `example.com` → `dozzle.example.com`). |
+| `CADDY_ACME_EMAIL` | Email for Let's Encrypt cert registration. |
+
+**SSO (Authelia):**
+
+| Variable | What it is |
+|---|---|
+| `AUTHELIA_USER` | Defaults to `admin`. The login username for the SSO portal. |
+| `AUTHELIA_PASSWORD` | Auto-generated 32-char hex if blank. Copy out to your secret store — you'll type it at the login screen. |
+
+**Optional / generated:**
+
+| Variable | What it is |
+|---|---|
+| `ANTHROPIC_API_KEY` | Lets `09-claude-code.sh` wire non-interactive auth. If blank, run `claude login` once over SSH. |
+| `ALLOW_PUBLIC_WEB` | Default `true` so Caddy can serve 80/443. Set `false` for fully internal boxes. |
+| `GRAFANA_ADMIN_PASSWORD` | **Full profile only.** Auto-generated if blank. |
+| `BACKUP_STORAGE_*` / `BACKUP_ENCRYPTION_PASSPHRASE` | S3-compatible backup target (restic) — wired in when backup orchestration lands. |
+| `ALERT_EMAIL`, `SMTP_*` | Alert delivery — wired in when alerting lands. |
+
+---
+
+## What you get after launch
+
+The hardened base always installs; the optional layers below are chosen at
+bootstrap (it prompts once, per component, and remembers the answers in
+`.env`). The bootstrap installs:
+
+- **Public SSH** (key-only, UFW rate-limited, fail2ban).
+- **Authelia SSO** with password + TOTP, gating every public subdomain.
+- **Caddy reverse proxy** with automatic TLS, consulting Authelia on every
+  request via `forward_auth`.
+- **Docker + Compose v2** with log rotation.
+- **ttyd web terminal** serving Claude Code in a browser tab at
+  `claude.<PRIMARY_DOMAIN>`, opening in a working directory you choose at
+  bootstrap (no SSH client needed).
+- **Platform dashboard** at `<PRIMARY_DOMAIN>` and
+  `dashboard.<PRIMARY_DOMAIN>` — a landing page indexing every tool above.
+- **Observability stack** (profile-selectable, dashboards bound to
+  `127.0.0.1` internally, reached through Caddy).
+- **Claude Code** on the host for the admin user, plus a `claude-session`
+  helper that runs one persistent tmux-attached instance.
+
+### Login flow (browser, any device)
+
+1. Open any of the URLs below.
+2. Caddy bounces you to `https://auth.<PRIMARY_DOMAIN>`.
+3. Enter username + password + 6-digit TOTP code (from your authenticator
+   app — 1Password, Authy, Aegis, etc.).
+4. Caddy bounces you back to the URL you wanted.
+
+The session cookie is valid for 1 hour (30 min inactivity), so once you've
+logged in, every dashboard and the Claude terminal are open until expiry.
+
+### URLs
+
+| What | URL |
+|---|---|
+| **SSO login portal** | `https://auth.<PRIMARY_DOMAIN>` |
+| **Platform dashboard** (tool index) | `https://<PRIMARY_DOMAIN>` · `https://dashboard.<PRIMARY_DOMAIN>` |
+| **Claude Code (browser terminal)** | `https://claude.<PRIMARY_DOMAIN>` |
+| **Dozzle** (container logs) | `https://dozzle.<PRIMARY_DOMAIN>` |
+| **Glances** (host metrics) | `https://glances.<PRIMARY_DOMAIN>` |
+| **ntopng** (traffic/DPI) | `https://ntopng.<PRIMARY_DOMAIN>` |
+| **Grafana** *(full profile)* | `https://grafana.<PRIMARY_DOMAIN>` — login with `GRAFANA_ADMIN_PASSWORD` |
+
+The subdomain labels above (`auth`, `claude`, …) are defaults — `bootstrap.sh`
+can set a custom label per component (the `SUBDOMAIN_*` flags).
+
+Without `PRIMARY_DOMAIN`, dashboards are localhost-only and Authelia/Caddy
+are skipped. SSH-tunnel to view:
+
+```bash
+ssh -L 8080:localhost:8080 <server>      # then open http://localhost:8080
+```
+
+### TOTP enrollment
+
+On the first run of `bootstrap.sh`, `05-authelia.sh` prints a QR code to
+your terminal **once**. Scan it into your authenticator app. The
+`otpauth://` URI is also saved at `/opt/infra/.authelia-enrollment`
+(root-readable, mode `0600`) — back it up to your password manager so you
+can re-enroll a new device later.
+
+### Adding more users
+
+The bootstrap seeds one operator account. Add more Authelia users from an
+SSH session on the server:
+
+```bash
+sudo /opt/infra/platform/authelia/add-user.sh <username>
+```
+
+It sets the password, enrolls a TOTP device, and prints the QR.
+
+### Server access (terminal)
+
+- **SSH:** `ssh <admin>@<server>` with the admin user's key. Unchanged by
+  Authelia (which gates only the HTTP layer).
+- **Browser:** `https://claude.<PRIMARY_DOMAIN>` → Authelia login → live
+  Claude session. No SSH client required.
+- **Remote Claude Code over SSH:** `claude-session` from any SSH session
+  attaches the one persistent tmux-backed instance.
+
+### What `99-verify.sh` asserts is green
+
+UFW active and SSH rate-limited · fail2ban active · Docker active · Authelia
+container + health endpoint · Caddy container · ttyd-claude service ·
+dashboard page rendered · Claude Code installed · no dashboard bound to
+`0.0.0.0` · all observability containers running.
+
+---
+
+## 10-minute disaster recovery
+
+If the server died right now and only this repo existed, the platform layer
+is operational again in 10 minutes (provision ~2 min + `.env` ~2 min +
+`bootstrap.sh` ~5 min + verify ~30 sec) — the Quickstart above is the whole
+procedure.
+
+---
+
+## What's next
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md). Top remaining items: backup
+orchestration (restic to S3-compatible storage) and alertmanager + SMTP
+routing.
+
+---
+
+## Repo layout
+
+- [`bootstrap/`](bootstrap/) — ordered scripts (`00`–`10`, `99-verify`) + `bootstrap.sh` orchestrator.
+- [`platform/`](platform/) — platform service definitions (Authelia SSO, Caddy reverse proxy, ttyd web terminal, observability).
+- [`security/`](security/) — hardening configs (SSH, firewall, fail2ban, audit rules).
+- [`applications/`](applications/) — registry of application tenants.
+- [`docs/`](docs/) — [CHANGELOG](docs/CHANGELOG.md) (shipped) and [ROADMAP](docs/ROADMAP.md) (planned). The full operational handbook (architecture, runbooks, disaster recovery, secrets policy) is operator-local — kept per-fork, not committed here.
+- [`tests/`](tests/) — integration tests for the platform itself.
+
+## What does not live here
+
+Application code or application-specific infrastructure. Each application
+lives in its own repo and integrates with the platform via documented
+contracts (Caddyfile fragments, container labels, a backup-volume registry).
+
+## For Claude agents working in this repo
+
+Read [`.claude/skills/overall-infra-architect/SKILL.md`](.claude/skills/overall-infra-architect/SKILL.md)
+first — the Platform Infrastructure Architect persona, operating principles,
+and the boundary between platform and application work.
+
+## License
+
+[PolyForm Noncommercial License 1.0.0](LICENSE.md). Free to use, modify, fork,
+and share for any **noncommercial** purpose — personal projects, study, and
+research, plus use by nonprofits, schools, and government, are all explicitly
+covered. **Commercial use is not granted** by this license: you may not
+monetize the software or use it in a revenue-generating operation. Contact the
+maintainer for commercial terms.

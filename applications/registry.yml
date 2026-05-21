@@ -1,0 +1,17 @@
+# Canonical registry of applications hosted (or planned to be hosted) on this platform.
+# Each application has its own infrastructure repo; this file describes the
+# platform's view.
+#
+# Add an entry per tenant application. Example:
+#
+# applications:
+#   - name: <app-name>
+#     description: <one-line description>
+#     app_repo: <path-or-url-to-app-code-repo>
+#     infra_repo: <path-or-url-to-app-infra-repo>
+#     primary_domain: <domain-or-TBD>
+#     status: planned | deployed | retired
+#     notes: |
+#       Multi-line notes about how this application integrates with the platform.
+
+applications: []

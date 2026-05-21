@@ -1,0 +1,74 @@
+# Lightweight observability profile — fits ~1 GiB RAM single-vCPU boxes.
+# Glances (metrics) + Dozzle (logs) + ntopng (in/out traffic visualisation).
+#
+# Security model: every UI binds ONLY to 127.0.0.1 on the host. They are
+# reached from outside through the Caddy reverse proxy (bootstrap/02-caddy.sh)
+# which terminates TLS and enforces HTTP basic auth.
+#
+# Metrics is Glances (not Beszel): Beszel's agent cannot be provisioned
+# non-interactively, which breaks the no-manual-steps recovery path.
+# Glances is a single zero-bootstrap container.
+
+services:
+  glances:
+    image: nicolargo/glances:latest
+    container_name: glances
+    restart: unless-stopped
+    pid: host                   # full host process/metric visibility
+    network_mode: host          # host network/connection stats
+    environment:
+      # Web UI mode, bound to localhost only (port 61208). Caddy reaches it
+      # over the host loopback.
+      GLANCES_OPT: "-w --bind 127.0.0.1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 256m
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_NO_ANALYTICS: "true"
+    mem_limit: 64m
+
+  ntopng-redis:
+    image: redis:7-alpine
+    container_name: ntopng-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"   # reachable by host-networked ntopng
+    volumes:
+      - ntopng_redis:/data
+    mem_limit: 48m
+
+  ntopng:
+    # ntop publishes only :latest for this image (no versioned tags upstream),
+    # so this is the one image in the stack we cannot pin.
+    image: ntop/ntopng:latest
+    container_name: ntopng
+    restart: unless-stopped
+    network_mode: host          # required to see real host in/out traffic on eth0
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - ntopng-redis
+    command:
+      - "--interface=eth0"
+      - "--http-port=127.0.0.1:3000"   # UI bound to localhost; Caddy front-doors it
+      - "--redis=127.0.0.1:6379"
+      - "--community"
+      # No ntopng login: it is localhost-only and gated by Caddy + Authelia,
+      # so its own admin/admin login is a redundant second prompt.
+      # --disable-login takes a <mode>: 1 = login disabled for all hosts.
+      - "--disable-login=1"
+    mem_limit: 256m
+
+volumes:
+  ntopng_redis:

@@ -1,0 +1,37 @@
+# Authelia — single-sign-on gate for the platform.
+# Sits behind Caddy: Caddy's forward_auth directive consults Authelia on every
+# request, redirecting to the Authelia portal when the session is missing or
+# expired. Single operator user, file-backed, SQLite local storage, no Redis,
+# no SMTP (notifier writes to a file — only relevant for password reset which
+# is disabled in this single-user setup).
+#
+# Secrets are mounted as files (the *_FILE env-var convention) rather than
+# passed via environment variables, to sidestep any docker-compose env
+# interpolation surprises with the secret values.
+
+services:
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9091:9091"
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /secrets/jwt
+      AUTHELIA_SESSION_SECRET_FILE: /secrets/session
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /secrets/storage
+    volumes:
+      - ./configuration.yml:/config/configuration.yml:ro
+      - ./users_database.yml:/config/users_database.yml:ro
+      - ./secrets:/secrets:ro
+      - authelia_data:/config
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9091/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  authelia_data:

@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.local
+*.secret
+*.key
+*.pem
+platform/caddy/Caddyfile
+platform/caddy/.basicauth.env
+platform/dashboard/index.html
+platform/authelia/configuration.yml
+platform/authelia/users_database.yml
+platform/authelia/secrets/
+platform/authelia/db.sqlite3
+platform/authelia/notification.txt
+
+# Runtime
+*.log
+.DS_Store
+node_modules/
+__pycache__/
+
+# Local notes
+.scratch/
+TODO-local.md
+
+# Docs — only CHANGELOG.md (shipped features) and ROADMAP.md (planned work)
+# are tracked. Everything else under docs/ (architecture, runbooks, ADRs,
+# the ops handbook) is operator-local: kept per-fork, never shared.
+docs/*
+!docs/CHANGELOG.md
+!docs/ROADMAP.md
+
+# Local Claude Code settings (machine-specific, not part of the brief's structure)
+.claude/settings.local.json

@@ -1,0 +1,37 @@
+# systemd unit template for ttyd serving the shared Claude Code session.
+# Rendered to /etc/systemd/system/ttyd-claude.service by bootstrap/07-ttyd.sh,
+# with __ADMIN_USER__, __ADMIN_HOME__ and __CLAUDE_WORKDIR__ substituted.
+#
+# Bound to 127.0.0.1:7681 only, never directly exposed. Caddy serves
+# claude.<PRIMARY_DOMAIN>, gated by Authelia, reverse-proxying to this port.
+#
+# __CLAUDE_WORKDIR__ is the directory the browser Claude session opens in,
+# chosen at bootstrap and stored as CLAUDE_WORKDIR in .env. It is listed in
+# ReadWritePaths so Claude can write there under ProtectSystem=strict.
+
+[Unit]
+Description=ttyd web terminal serving the shared Claude Code session
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__ADMIN_USER__
+Group=__ADMIN_USER__
+Environment=HOME=__ADMIN_HOME__
+Environment=PATH=__ADMIN_HOME__/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=__CLAUDE_WORKDIR__
+# -p port  -i interface (bind localhost only)  -W writable (allow input)
+# Last arg is the command ttyd runs in the spawned PTY.
+ExecStart=/usr/bin/ttyd -p 7681 -i 127.0.0.1 -W __ADMIN_HOME__/.local/bin/claude-session
+Restart=on-failure
+RestartSec=3
+# Light sandboxing.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=__ADMIN_HOME__ __CLAUDE_WORKDIR__
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

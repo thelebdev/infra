@@ -1,0 +1,96 @@
+# Caddy reverse proxy template — rendered to ./Caddyfile by
+# bootstrap/06-caddy.sh, which substitutes the placeholders below and strips
+# the server block of any component that was not selected at bootstrap.
+#
+# Placeholders (replaced literally at bootstrap time):
+#   __PRIMARY_DOMAIN__     e.g. "example.com" — dashboards served at <name>.<domain>
+#   __CADDY_ACME_EMAIL__   Let's Encrypt registration email
+#
+# Component blocks are wrapped in "# >>>component:NAME ... # <<<component:NAME"
+# markers; 06-caddy.sh removes a block when that component is not installed,
+# so Caddy never advertises a dead route or fetches an unused certificate.
+#
+# Auth model: Authelia (127.0.0.1:9091, served at auth.<domain>) is consulted
+# on every request via forward_auth; unauthenticated requests are redirected
+# to the Authelia portal where the operator authenticates with password + TOTP.
+
+{
+	email __CADDY_ACME_EMAIL__
+}
+
+(secure_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+# Snippet: gate a route on a valid Authelia session.
+(authelia_gate) {
+	forward_auth 127.0.0.1:9091 {
+		uri /api/verify?rd=https%3A%2F%2Fauth.__PRIMARY_DOMAIN__
+		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+	}
+}
+
+# The Authelia portal itself — never gated, always present.
+auth.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	reverse_proxy 127.0.0.1:9091
+}
+
+# >>>component:dashboard
+# Platform landing page: the tool index, served as static files by Caddy.
+# Reachable at the apex domain and dashboard.<domain>. Gated by Authelia.
+__PRIMARY_DOMAIN__, dashboard.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	root * /srv/dashboard
+	file_server
+}
+# <<<component:dashboard
+
+# >>>component:claude
+# Claude Code in a browser tab, via ttyd. Gated by Authelia.
+claude.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	reverse_proxy 127.0.0.1:7681
+}
+# <<<component:claude
+
+# >>>component:dozzle
+dozzle.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	reverse_proxy 127.0.0.1:8080
+}
+# <<<component:dozzle
+
+# >>>component:glances
+glances.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	reverse_proxy 127.0.0.1:61208
+}
+# <<<component:glances
+
+# >>>component:ntopng
+ntopng.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	reverse_proxy 127.0.0.1:3000
+}
+# <<<component:ntopng
+
+# >>>component:grafana
+# Grafana exists only on the FULL observability profile.
+grafana.__PRIMARY_DOMAIN__ {
+	import secure_headers
+	import authelia_gate
+	reverse_proxy 127.0.0.1:3001
+}
+# <<<component:grafana

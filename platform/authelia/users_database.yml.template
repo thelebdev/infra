@@ -1,0 +1,19 @@
+# Authelia users database — rendered by bootstrap/05-authelia.sh.
+# Single operator user. Password is an argon2id hash, generated at bootstrap
+# time from AUTHELIA_PASSWORD in .env (or an auto-generated 32-char hex if
+# blank).
+#
+# Placeholders:
+#   __AUTHELIA_USER__         username (default: admin)
+#   __AUTHELIA_DISPLAYNAME__  display name (default: Operator)
+#   __AUTHELIA_EMAIL__        email (uses CADDY_ACME_EMAIL)
+#   __AUTHELIA_PASSWORD_HASH__ argon2id hash of the plaintext password
+
+users:
+  __AUTHELIA_USER__:
+    disabled: false
+    displayname: __AUTHELIA_DISPLAYNAME__
+    password: __AUTHELIA_PASSWORD_HASH__
+    email: __AUTHELIA_EMAIL__
+    groups:
+      - admins
