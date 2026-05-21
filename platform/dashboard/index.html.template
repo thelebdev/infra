@@ -77,10 +77,10 @@
     __GLANCES_CARD__
     __NTOPNG_CARD__
     __GRAFANA_CARD__
-    <a class="card" href="https://auth.__PRIMARY_DOMAIN__">
+    <a class="card" href="https://__SUBDOMAIN_AUTH__.__PRIMARY_DOMAIN__">
       <span class="card-name">Authelia</span>
       <span class="card-desc">SSO portal and your 2FA settings</span>
-      <span class="card-host">auth.__PRIMARY_DOMAIN__</span>
+      <span class="card-host">__SUBDOMAIN_AUTH__.__PRIMARY_DOMAIN__</span>
     </a>
   </div>
 

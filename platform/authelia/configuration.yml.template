@@ -47,7 +47,7 @@ access_control:
   rules:
     # Authelia portal itself must be reachable without auth.
     - domain:
-        - auth.__PRIMARY_DOMAIN__
+        - __SUBDOMAIN_AUTH__.__PRIMARY_DOMAIN__
       policy: bypass
     # Everything else under the primary domain requires two-factor — including
     # the bare apex (the platform dashboard), which "*." does not match.
@@ -63,7 +63,7 @@ session:
   remember_me: 1w
   cookies:
     - domain: __PRIMARY_DOMAIN__
-      authelia_url: https://auth.__PRIMARY_DOMAIN__
+      authelia_url: https://__SUBDOMAIN_AUTH__.__PRIMARY_DOMAIN__
 
 regulation:
   max_retries: 3

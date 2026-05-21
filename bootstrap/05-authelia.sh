@@ -55,14 +55,18 @@ fi
 
 # --- 3. Render configuration.yml every run (stateless; picks up template edits).
 EMAIL="${CADDY_ACME_EMAIL:-admin@${PRIMARY_DOMAIN}}"
+SUBDOMAIN_AUTH="${SUBDOMAIN_AUTH:-auth}"
 python3 - "${AUTHELIA_DIR}/configuration.yml.template" "${AUTHELIA_DIR}/configuration.yml" \
-  "${PRIMARY_DOMAIN}" <<'PYEOF'
+  "${PRIMARY_DOMAIN}" "${SUBDOMAIN_AUTH}" <<'PYEOF'
 import sys
-src, dst, domain = sys.argv[1:4]
-open(dst, "w").write(open(src).read().replace("__PRIMARY_DOMAIN__", domain))
+src, dst, domain, sub_auth = sys.argv[1:5]
+content = open(src).read()
+content = content.replace("__SUBDOMAIN_AUTH__", sub_auth)
+content = content.replace("__PRIMARY_DOMAIN__", domain)
+open(dst, "w").write(content)
 PYEOF
 chmod 600 "${AUTHELIA_DIR}/configuration.yml"
-log INFO "rendered authelia configuration.yml"
+log INFO "rendered authelia configuration.yml (portal: ${SUBDOMAIN_AUTH}.${PRIMARY_DOMAIN})"
 
 # --- 4. Render users_database.yml ONCE. It is the live user list: users added
 # later via platform/authelia/add-user.sh must survive bootstrap re-runs, so a

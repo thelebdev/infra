@@ -118,4 +118,4 @@ systemctl restart ttyd-claude.service
 sleep 1
 systemctl is-active --quiet ttyd-claude.service || \
   log WARN "ttyd-claude not yet active (likely waiting for 09-claude-code to install claude-session); will retry on restart"
-log INFO "ttyd-claude unit installed; reachable via claude.${PRIMARY_DOMAIN} after 09-claude-code lands"
+log INFO "ttyd-claude unit installed; reachable via ${SUBDOMAIN_CLAUDE:-claude}.${PRIMARY_DOMAIN} after 09-claude-code lands"

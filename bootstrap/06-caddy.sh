@@ -46,11 +46,23 @@ fi
 # Grafana exists only on the full profile.
 [ "${PROFILE}" = "full" ] || disabled="${disabled},grafana"
 
+# Resolve subdomain labels (default to the conventional names).
+SUBDOMAIN_AUTH="${SUBDOMAIN_AUTH:-auth}"
+SUBDOMAIN_DASHBOARD="${SUBDOMAIN_DASHBOARD:-dashboard}"
+SUBDOMAIN_CLAUDE="${SUBDOMAIN_CLAUDE:-claude}"
+SUBDOMAIN_DOZZLE="${SUBDOMAIN_DOZZLE:-dozzle}"
+SUBDOMAIN_GLANCES="${SUBDOMAIN_GLANCES:-glances}"
+SUBDOMAIN_NTOPNG="${SUBDOMAIN_NTOPNG:-ntopng}"
+SUBDOMAIN_GRAFANA="${SUBDOMAIN_GRAFANA:-grafana}"
+subs="AUTH=${SUBDOMAIN_AUTH},DASHBOARD=${SUBDOMAIN_DASHBOARD},CLAUDE=${SUBDOMAIN_CLAUDE}"
+subs="${subs},DOZZLE=${SUBDOMAIN_DOZZLE},GLANCES=${SUBDOMAIN_GLANCES}"
+subs="${subs},NTOPNG=${SUBDOMAIN_NTOPNG},GRAFANA=${SUBDOMAIN_GRAFANA}"
+
 CADDYFILE="${CADDY_DIR}/Caddyfile"
 python3 - "${CADDY_DIR}/Caddyfile.template" "${CADDYFILE}" \
-  "${PRIMARY_DOMAIN}" "${CADDY_ACME_EMAIL}" "${disabled}" <<'PYEOF'
+  "${PRIMARY_DOMAIN}" "${CADDY_ACME_EMAIL}" "${disabled}" "${subs}" <<'PYEOF'
 import re, sys
-src, dst, domain, email, disabled = sys.argv[1:6]
+src, dst, domain, email, disabled, subs = sys.argv[1:7]
 content = open(src).read()
 for comp in (c for c in disabled.split(",") if c):
     content = re.sub(
@@ -58,6 +70,9 @@ for comp in (c for c in disabled.split(",") if c):
         "", content, flags=re.S)
 # Drop the component markers around the blocks that were kept.
 content = re.sub(r"^# (?:>>>|<<<)component:[^\n]*\n", "", content, flags=re.M)
+for pair in subs.split(","):
+    key, val = pair.split("=", 1)
+    content = content.replace("__SUBDOMAIN_%s__" % key, val)
 content = content.replace("__PRIMARY_DOMAIN__", domain)
 content = content.replace("__CADDY_ACME_EMAIL__", email)
 open(dst, "w").write(content)
@@ -88,4 +103,4 @@ docker compose \
 
 docker compose --project-name infra-caddy \
   -f "${CADDY_DIR}/docker-compose.yml" ps
-log INFO "caddy up; gated subdomains: auth (open), claude/dozzle/glances/ntopng/grafana (authelia)"
+log INFO "caddy up for ${PRIMARY_DOMAIN}; the ${SUBDOMAIN_AUTH} portal is open, all other subdomains gated by authelia"

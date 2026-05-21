@@ -56,8 +56,58 @@ select_components() {
     log INFO "component ${var}=${ans}"
   done
 }
+# Ask once for custom subdomain labels, gated behind a single yes/no so the
+# common path stays fast. Defaults to the conventional names; persists to
+# .env; only prompts for components that will actually be installed.
+select_subdomains() {
+  [ -n "${PRIMARY_DOMAIN:-}" ] || return 0
+  local profile ans e var def tmp label val pending=0
+  profile="${OBSERVABILITY_PROFILE:-lightweight}"
+  local list=( "SUBDOMAIN_AUTH:auth:Authelia portal" )
+  [ "${INSTALL_DASHBOARD:-true}" = "true" ] && list+=( "SUBDOMAIN_DASHBOARD:dashboard:platform dashboard" )
+  [ "${INSTALL_CLAUDE:-true}"    = "true" ] && list+=( "SUBDOMAIN_CLAUDE:claude:Claude browser terminal" )
+  if [ "${profile}" = "lightweight" ]; then
+    [ "${INSTALL_DOZZLE:-true}"  = "true" ] && list+=( "SUBDOMAIN_DOZZLE:dozzle:Dozzle" )
+    [ "${INSTALL_GLANCES:-true}" = "true" ] && list+=( "SUBDOMAIN_GLANCES:glances:Glances" )
+    [ "${INSTALL_NTOPNG:-true}"  = "true" ] && list+=( "SUBDOMAIN_NTOPNG:ntopng:ntopng" )
+  else
+    list+=( "SUBDOMAIN_GRAFANA:grafana:Grafana" )
+  fi
+  for e in "${list[@]}"; do
+    var="${e%%:*}"
+    [ -n "${!var:-}" ] || pending=1
+  done
+  [ "${pending}" -eq 1 ] || return 0
+  ans=n
+  if [ -t 0 ]; then
+    printf '  Customize subdomain names? Default is auth/claude/grafana/etc. [y/N]: ' >&2
+    read -r ans || true
+  fi
+  for e in "${list[@]}"; do
+    var="${e%%:*}"
+    tmp="${e#*:}"; def="${tmp%%:*}"
+    label="${e##*:}"
+    [ -n "${!var:-}" ] && continue
+    val=""
+    case "${ans}" in
+      [Yy]*)
+        if [ -t 0 ]; then
+          printf '    %s subdomain [%s]: ' "${label}" "${def}" >&2
+          read -r val || true
+        fi ;;
+    esac
+    val="${val:-${def}}"
+    printf '%s' "${val}" | grep -qE '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$' \
+      || die "invalid subdomain label '${val}' for ${var} (DNS label: lowercase letters, digits, hyphens)"
+    set_env_var "${var}" "${val}"
+    log INFO "subdomain ${var}=${val}"
+  done
+}
+
 select_components
-load_env   # re-load so the numbered steps inherit the component choices
+load_env
+select_subdomains
+load_env
 
 STEPS=(
   00-prerequisites.sh

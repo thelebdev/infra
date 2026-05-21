@@ -8,6 +8,11 @@ Each entry: date, mode (Maintain / Manage / Create), one-line summary.
 
 ## Entries
 
+- **2026-05-21** — Create — `bootstrap.sh` now offers to customize the
+  subdomain label for each component (`SUBDOMAIN_*` flags, prompted behind a
+  single yes/no gate, persisted to `.env`). `auth`, `claude`, `grafana` and
+  the rest are now defaults rather than hardcoded; the Caddyfile, the Authelia
+  config and the dashboard all render from the chosen labels.
 - **2026-05-21** — Create — `bootstrap.sh` now prompts once for which optional
   components to install (Glances, Dozzle, ntopng, Claude, dashboard), at
   per-tool granularity. Answers persist to `.env` as `INSTALL_*` flags so
