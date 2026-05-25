@@ -77,6 +77,18 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     word-break: break-all;
   }
+  /* per-session card markers (added dynamically next to the static tools) */
+  .card.session-card .card-name { display: flex; align-items: center; gap: .45rem; }
+  .card.session-card .dot {
+    display: inline-block; width: .55rem; height: .55rem; border-radius: 50%;
+    border: 1.5px solid var(--green); flex: 0 0 auto;
+  }
+  .card.session-card .dot.attached { background: var(--green); }
+  .card.session-card .card-cmd {
+    font-size: .72rem; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 0 .45rem; line-height: 1.4; margin-left: auto;
+  }
 
   /* sessions */
   .sessions { padding: 1.15rem 1.2rem 1.3rem; }
@@ -232,7 +244,43 @@
       });
     }
 
+    var toolsGridEl = document.getElementById("tools-grid");
+
+    function renderSessionCards(sessions) {
+      if (!toolsGridEl) return;
+      // Drop the previously-injected per-session cards; static tool cards
+      // stay because they don't carry .session-card.
+      var stale = toolsGridEl.querySelectorAll(".card.session-card");
+      for (var i = 0; i < stale.length; i++) stale[i].remove();
+      // Prepend the freshest sessions first so they appear near the static
+      // Terminal-sessions card, before Dozzle / Glances / etc.
+      var anchor = toolsGridEl.firstChild;
+      for (var j = 0; j < sessions.length; j++) {
+        var s = sessions[j];
+        var url = SESSIONS_BASE + "/?arg=" + encodeURIComponent(s.name);
+        var dotCls = s.attached ? "dot attached" : "dot";
+        var stateText = s.attached ? "attached" : rel(s.idle_seconds);
+        var cmd = s.cmd || "shell";
+        var node = document.createElement("a");
+        node.className = "card session-card";
+        node.href = url;
+        node.target = "_blank";
+        node.rel = "noopener";
+        node.innerHTML =
+          '<span class="card-name">' +
+            '<span class="' + dotCls + '"></span>' +
+            esc(s.name) +
+            '<span class="card-cmd">' + esc(cmd) + '</span>' +
+          '</span>' +
+          '<span class="card-desc">' + esc(stateText) +
+            ' · ' + (s.windows || 1) + 'w · ' + esc(s.dir) + '</span>' +
+          '<span class="card-host">open this session ↗</span>';
+        toolsGridEl.insertBefore(node, anchor);
+      }
+    }
+
     function render(sessions) {
+      renderSessionCards(sessions);
       if (!sessions.length) {
         listEl.innerHTML = '<div class="pad muted">No sessions yet — '
           + 'start one above. Each is an independent terminal session.</div>';
@@ -335,7 +383,7 @@
 
   <section class="section">
     <div class="section-head"><h2>Tools</h2></div>
-    <div class="grid">
+    <div class="grid" id="tools-grid">
       __SESSIONS_CARD__
       __DOZZLE_CARD__
       __GLANCES_CARD__
