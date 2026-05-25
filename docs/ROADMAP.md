@@ -55,6 +55,98 @@ device with a browser, without an SSH client.
 
 ## Near term
 
+### Verify the dashboard /api/* auth gate actually fires (carry-over from 2026-05-25)
+
+The dashboard's `/api/sessions` and `/api/workspace` still return 401
+"missing or ambiguous identity" through Caddy, even with the user logged
+in. Three back-to-back fixes were merged that night and the symptom
+persists:
+
+- PR #6 wrapped the `authelia_gate` snippet in `route { }` so
+  `request_header` runs before `forward_auth` (Caddy reorders by directive
+  priority).
+- PR #7 fixed an unrelated parsing bug: tmux 3.x escapes 0x1f in `-F`
+  output, so the API was returning `[]` even with a valid identity.
+- PR #8 moved the `route { }` wrapper from inside the snippet to *around*
+  the entire site block, so `handle /api/*` (higher priority than `route`)
+  doesn't preempt `forward_auth`.
+
+After PR #8 was merged, the on-disk Caddyfile.template has 9 `route {`
+occurrences but the rendered Caddyfile only has 2, and the live admin-API
+config still shows the old handler order: `[reverse_proxy → 7682,
+file_server, forward_auth]`. So PR #8's render didn't actually land on the
+running container — `06-caddy.sh` may not have re-rendered, or Caddy
+didn't pick up the new file. Diagnostic priorities:
+
+1. `bash bootstrap/06-caddy.sh` and inspect its output; verify
+   `/opt/infra/platform/caddy/Caddyfile` mtime updates and contains the
+   expected `route { }` wrappers.
+2. Walk the live Caddy config via `curl 127.0.0.1:2019/config/...` after
+   the re-render; confirm `forward_auth` precedes `handle /api/*`.
+3. If still wrong, the directive-priority theory may be incomplete; try
+   replacing all the `handle` blocks with explicit `route` blocks (or move
+   `/api/*` to its own subdomain like `api.<domain>` to sidestep the
+   shared site block).
+
+**Status.** Open. Direct curls to `127.0.0.1:7682/api/sessions` with a
+manually-set `Remote-User: admin` header return 200 + the session list, so
+session-manager and the marker logic are fine; the failure is purely in
+Caddy forwarding the verified identity to `/api/*` inside the dashboard
+block.
+
+### Bubblewrap-confined shell sessions with break-out
+
+By default, a shell session opened from `sessions.<domain>` should run
+inside a `bwrap` jail: only `~/workspace` and `/tmp` writable; HOME a
+tmpfs; system binaries read-only. Non-sudo commands work normally inside
+the jail — but `cd /etc`, `cat ~/.ssh/id_*`, etc. fail.
+
+Two ways to break out of the bwrap into a regular shell:
+
+1. **`sudo break`** — a setuid helper installed inside the sandbox. Asks
+   for the sudo password (validates via `sudo -v`), then prompts in the
+   CLI for the user's 6-digit Authelia TOTP. The TOTP is validated against
+   the secret in Authelia's SQLite store via
+   `authelia storage user totp export`. On success, signals the session's
+   supervisor (in the parent tmux session) to swap the bwrap'd shell for
+   a regular `bash -l`. On failure (wrong TOTP, timeout), stays inside
+   the jail.
+2. **Starting Claude as the session command** — choosing "Claude Code" in
+   the dashboard's new-session form skips the bwrap entirely. Claude
+   needs `~/.claude/credentials.json`, the user's git config, write access
+   to project files outside the workspace tree, etc. Trying to bind-mount
+   each of those into a bwrap creates more attack surface than just
+   running Claude outside it.
+
+Implementation notes:
+- bwrap is Ubuntu-native (`apt install bubblewrap`).
+- A "supervisor" pattern is required because you can't escape your own
+  bwrap from inside: the parent tmux pane runs a small supervisor that
+  spawns either bwrap'd `bash` or plain `bash`, and switches on signal.
+- The TOTP validation needs root (to read Authelia's encrypted SQLite
+  store), which is exactly what `sudo` gives us via the setuid path.
+- Authelia doesn't support push notifications natively — the CLI flow
+  asks the user to type the TOTP code from their authenticator app, same
+  as the web login. A real "tap to approve on phone" flow would need a
+  separate channel (ntfy, webhook, etc.) — not in scope for v1.
+
+**Status.** Not started. Sketch lives in this session's context. Land
+after the carry-over above is resolved.
+
+### Per-app Authelia gate toggle in the dashboard
+
+A new "Public surface" panel on the dashboard that lists every subdomain
+Caddy is serving and lets the operator toggle "behind Authelia" on/off
+per subdomain. Discovery via Caddy's admin API at
+`127.0.0.1:2019/config/apps/http/servers/srv0/routes`. State persisted in
+a new `platform/caddy/gates.yml`; toggle hits a new session-manager
+endpoint that re-renders the Caddyfile, then calls
+`docker exec caddy caddy reload --config /etc/caddy/Caddyfile`. Toggling
+itself should require the same TOTP-from-CLI re-auth as `sudo break`
+(reuses the same TOTP-validation plumbing).
+
+**Status.** Not started. Specification draft pending.
+
 ### Backup orchestration
 
 restic to S3-compatible storage (Hetzner Storage Box, Backblaze B2, etc.),
