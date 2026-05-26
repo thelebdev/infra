@@ -65,6 +65,7 @@ pane="${TMUX_PANE:-}"
 
 exec /usr/bin/bwrap \
   --ro-bind / / \
+  --ro-bind /opt/infra/platform/ttyd/claude-shim /usr/local/bin/claude \
   --tmpfs /tmp \
   --tmpfs /var/tmp \
   --tmpfs /home \

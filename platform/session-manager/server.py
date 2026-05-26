@@ -3,8 +3,9 @@
 
 A tiny HTTP service that lets the dashboard's "Terminal sessions" section
 list, create, and stop the per-user, tmux-backed browser terminal sessions
-that ttyd serves. Each session runs one of an allowlisted set of commands
-(a login shell by default; Claude Code if installed).
+that ttyd serves. Every session runs a bubblewrap-sandboxed login shell
+inside the user's workspace; Claude Code launches from inside the shell
+via the TOTP-gated ``claude`` shim on PATH.
 
 It is reached only via Caddy at ``<dashboard-host>/api/*``. Caddy gates that
 route with Authelia and forwards the authenticated identity as the
@@ -16,7 +17,7 @@ sessions.
 
 No third-party dependencies — standard library only. Runs as a systemd unit
 under the same OS account as ttyd, because it needs that account's tmux
-sockets and PATH (to find ``tmux`` and ``claude``).
+sockets and PATH (to find ``tmux``).
 """
 from __future__ import annotations
 
@@ -60,9 +61,12 @@ SEP = "|"
 TMUX_TIMEOUT = 10
 MAX_BODY = 64 * 1024
 
-# Allowed command choices and the default. The allowlist is the safety
-# boundary for what a user can run inside a session — keep it tight.
-CMD_ALLOWLIST = ("shell", "claude")
+# Allowed command choices and the default. Sessions are always sandboxed
+# shells today; Claude Code launches from inside the shell via the
+# TOTP-gated `claude` shim. The single-entry tuple is kept for the
+# marker-file and label-routing code that still reads/writes a command
+# label per session.
+CMD_ALLOWLIST = ("shell",)
 CMD_DEFAULT = "shell"
 SAFE_SHELLS = {"/bin/bash", "/usr/bin/bash", "/bin/zsh", "/usr/bin/zsh",
                "/bin/sh", "/usr/bin/sh"}
@@ -149,19 +153,19 @@ def cmd_argv(label: str, target: Path | None = None) -> list[str]:
     """Resolve a command label to the argv tmux should spawn. Raises
     ApiError(400) for an unknown label — the allowlist is the boundary.
 
-    `target` is the (already-confined) per-session project directory; for
-    shell sessions it's passed to ``sandbox-shell`` which translates it into
-    the equivalent path inside the bubblewrap jail.
+    `target` is the (already-confined) per-session project directory; it is
+    passed to ``sandbox-shell`` which translates it into the equivalent
+    path inside the bubblewrap jail.
 
-    `shell` runs inside ``/usr/local/bin/sandbox-shell`` (a bubblewrap jail);
-    `claude` runs unconfined because Claude needs ~/.claude, git config, and
-    write access to project files — see platform/ttyd/sandbox-shell.
+    The only supported label is ``shell`` — every session is a sandboxed
+    login shell inside ``/usr/local/bin/sandbox-shell``. To launch Claude
+    Code, the operator types ``claude`` inside the shell (a TOTP-gated
+    shim at /usr/local/bin/claude inside the sandbox that breaks the pane
+    out of the jail; see platform/ttyd/claude-break-out.py).
     """
     if label == "shell":
         target_str = str(target if target is not None else WORKSPACE_ROOT)
         return ["/usr/local/bin/sandbox-shell", target_str]
-    if label == "claude":
-        return ["claude"]
     raise ApiError(400, f"unknown command '{label}'")
 
 
@@ -209,8 +213,13 @@ def read_version() -> dict[str, Any]:
 
 
 def claude_installed() -> bool:
-    """True if `claude` is on PATH for the service account — used to gate
-    the cmd-selector option in the dashboard."""
+    """True if `claude` is on PATH for the service account.
+
+    Sessions no longer pick `claude` as a launch command (every session is
+    a sandboxed shell, and claude is invoked from inside the shell via the
+    TOTP-gated shim). This is still exposed via /api/version so the
+    dashboard can surface whether the `claude` binary is present on the
+    host — relevant to operators planning to use the in-shell launcher."""
     for p in os.environ.get("PATH", "").split(os.pathsep):
         candidate = Path(p) / "claude"
         if candidate.is_file() and os.access(candidate, os.X_OK):
@@ -321,8 +330,6 @@ def create_session(user: str, name: str, req_dir: str,
     if cmd not in CMD_ALLOWLIST:
         raise ApiError(400, f"invalid command '{cmd}' "
                             f"(allowed: {', '.join(CMD_ALLOWLIST)})")
-    if cmd == "claude" and not claude_installed():
-        raise ApiError(400, "claude is not installed on this server")
     target = confine_dir(req_dir)
     try:
         target.mkdir(parents=True, exist_ok=True)

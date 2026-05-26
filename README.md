@@ -104,17 +104,24 @@ bootstrap (it prompts once, per component, and remembers the answers in
   request via `forward_auth`.
 - **Docker + Compose v2** with log rotation.
 - **ttyd web terminal** serving per-user browser sessions at
-  `sessions.<PRIMARY_DOMAIN>` — each session runs a login shell or Claude
-  Code (your pick), in a workspace directory you choose. No SSH client
-  needed. Persistent via tmux: a refresh or dropped connection never kills
-  a session.
+  `sessions.<PRIMARY_DOMAIN>` — every session is a bubblewrap-sandboxed
+  login shell inside a workspace directory you choose. Workspace is the
+  only writable place; the rest of the filesystem is read-only / tmpfs.
+  No SSH client needed. Persistent via tmux: a refresh or dropped
+  connection never kills a session.
+  - **`sudo break`** — escape the sandbox to an unconfined login bash.
+    Requires sudo password + a fresh Authelia TOTP code, every invocation.
+  - **`claude`** — launch Claude Code unconfined in the same pane. Same
+    TOTP gate as `break`. (The shim adds the implicit `sudo`, so the
+    operator just types `claude`.)
 - **Platform dashboard** at `<PRIMARY_DOMAIN>` and
   `dashboard.<PRIMARY_DOMAIN>` — a landing page indexing every tool above,
   with a live "Terminal sessions" panel for list / start / stop.
 - **Observability stack** (profile-selectable, dashboards bound to
   `127.0.0.1` internally, reached through Caddy).
 - **Claude Code** on the host for the admin user — optional, independent of
-  the browser terminal: usable as a session command and over SSH.
+  the browser terminal: launched via the TOTP-gated `claude` shim inside
+  a sandbox session, or directly over SSH on the host.
 
 ### Login flow (browser, any device)
 
@@ -173,7 +180,8 @@ It sets the password, enrolls a TOTP device, and prints the QR.
 - **SSH:** `ssh <admin>@<server>` with the admin user's key. Unchanged by
   Authelia (which gates only the HTTP layer).
 - **Browser:** `https://sessions.<PRIMARY_DOMAIN>` → Authelia login → menu
-  to open or start a session (shell or Claude). No SSH client required.
+  to open or start a sandboxed shell session. Inside the shell, `claude`
+  (TOTP-gated) launches Claude Code unconfined. No SSH client required.
 - **Sessions over SSH:** the `session` helper (or the dashboard's API) is
   also reachable from a plain SSH session — same tmux sockets, same
   per-user namespacing.

@@ -104,9 +104,28 @@ BREAK_SRC="${INFRA_ROOT}/platform/ttyd/break.py"
 install -m 755 -o root -g root "${BREAK_SRC}" /usr/local/sbin/break
 log INFO "installed /usr/local/sbin/break"
 
-# Sudoers fragment for `sudo break`. Render with the admin username
-# substituted, validate with `visudo -cf` BEFORE moving it into place so a
-# malformed fragment never wedges sudo.
+# claude-break-out — the second TOTP-gated escape, invoked via `sudo
+# claude-break-out`. Inside the sandbox the operator types plain `claude`;
+# the /usr/local/bin/claude shim (bind-mounted into the sandbox by
+# sandbox-shell) prefixes the sudo. Same sudoers/PASSWD/timestamp policy
+# as break: real password every invocation, then a fresh TOTP inside the
+# script.
+CLAUDE_BREAK_SRC="${INFRA_ROOT}/platform/ttyd/claude-break-out.py"
+[ -f "${CLAUDE_BREAK_SRC}" ] || die "missing ${CLAUDE_BREAK_SRC}"
+install -m 755 -o root -g root "${CLAUDE_BREAK_SRC}" /usr/local/sbin/claude-break-out
+log INFO "installed /usr/local/sbin/claude-break-out"
+
+# Ensure the in-sandbox /usr/local/bin/claude shim source is executable.
+# sandbox-shell bind-mounts it directly from the repo (no copy elsewhere),
+# so the +x bit must be set on the repo file itself.
+CLAUDE_SHIM_SRC="${INFRA_ROOT}/platform/ttyd/claude-shim"
+[ -f "${CLAUDE_SHIM_SRC}" ] || die "missing ${CLAUDE_SHIM_SRC}"
+chmod 0755 "${CLAUDE_SHIM_SRC}"
+log INFO "ensured +x on ${CLAUDE_SHIM_SRC}"
+
+# Sudoers fragment for `sudo break` + `sudo claude-break-out`. Render with
+# the admin username substituted, validate with `visudo -cf` BEFORE moving
+# it into place so a malformed fragment never wedges sudo.
 SUDOERS_SRC="${INFRA_ROOT}/platform/ttyd/break.sudoers.template"
 [ -f "${SUDOERS_SRC}" ] || die "missing ${SUDOERS_SRC}"
 SUDOERS_TMP="$(mktemp)"

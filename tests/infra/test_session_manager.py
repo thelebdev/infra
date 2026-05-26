@@ -136,7 +136,10 @@ class TmuxTests(WorkspaceTestCase):
         self.assertEqual(server.list_sessions("alice"), [])
 
     def test_list_parses_a_session_with_cmd(self) -> None:
-        # The marker says claude — list_sessions should surface it.
+        # Markers from older versions (when "claude" was a valid session
+        # command) should fall back to CMD_DEFAULT now that the allowlist
+        # only contains "shell" — list_sessions must surface a value the
+        # frontend can render.
         server.write_marker("alice", "api", "claude")
         line = server.SEP.join(["api", "2", "1", "100", "200", "/ws/api"])
         server._run = fake_run(stdout=line + "\n")
@@ -146,7 +149,7 @@ class TmuxTests(WorkspaceTestCase):
         self.assertEqual(out[0]["windows"], 2)
         self.assertTrue(out[0]["attached"])
         self.assertEqual(out[0]["dir"], "/ws/api")
-        self.assertEqual(out[0]["cmd"], "claude")
+        self.assertEqual(out[0]["cmd"], server.CMD_DEFAULT)
 
     def test_list_defaults_cmd_when_marker_missing(self) -> None:
         line = server.SEP.join(["orphan", "1", "0", "100", "200", "/ws/x"])
@@ -166,8 +169,14 @@ class TmuxTests(WorkspaceTestCase):
             server.create_session("alice", "api", "", cmd="rm")
         self.assertEqual(ctx.exception.status, 400)
 
-    def test_create_rejects_claude_when_missing(self) -> None:
-        server.claude_installed = lambda: False
+    def test_create_rejects_claude_now_that_its_removed(self) -> None:
+        # "claude" used to be a valid session command (with a separate
+        # is-claude-installed gate). It's been removed from CMD_ALLOWLIST
+        # entirely — sessions are always sandboxed shells; claude launches
+        # from inside via the TOTP-gated shim. cmd="claude" must be
+        # rejected as an unknown command, regardless of whether the
+        # binary is installed on the host.
+        server.claude_installed = lambda: True
         server._run = fake_run()
         with self.assertRaises(server.ApiError) as ctx:
             server.create_session("alice", "api", "", cmd="claude")
@@ -175,8 +184,8 @@ class TmuxTests(WorkspaceTestCase):
 
     def test_create_writes_marker(self) -> None:
         server._run = fake_run()
-        server.create_session("alice", "api", "", cmd="claude")
-        self.assertEqual(server.read_marker("alice", "api"), "claude")
+        server.create_session("alice", "api", "", cmd="shell")
+        self.assertEqual(server.read_marker("alice", "api"), "shell")
 
     def test_create_reports_duplicate(self) -> None:
         server._run = fake_run(returncode=1, stderr="duplicate session: api")
@@ -292,10 +301,14 @@ class CmdArgvTests(unittest.TestCase):
         self.assertEqual(argv[0], "/usr/local/bin/sandbox-shell")
         self.assertEqual(argv[1], str(server.WORKSPACE_ROOT))
 
-    def test_claude_argv(self) -> None:
-        # `claude` is the deliberate escape valve — runs unconfined because
-        # Claude needs ~/.claude credentials, git config, ssh keys, etc.
-        self.assertEqual(server.cmd_argv("claude"), ["claude"])
+    def test_claude_argv_now_rejected(self) -> None:
+        # "claude" is no longer a session-creation label — sessions are
+        # always sandboxed shells, claude launches from inside the shell
+        # via the TOTP-gated shim. The label must be rejected like any
+        # other unknown command.
+        with self.assertRaises(server.ApiError) as ctx:
+            server.cmd_argv("claude")
+        self.assertEqual(ctx.exception.status, 400)
 
     def test_unknown_label_rejected(self) -> None:
         with self.assertRaises(server.ApiError) as ctx:

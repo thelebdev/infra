@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # session — per-user, persistent, workspace-confined browser terminal
-# sessions, backed by tmux. Each session runs a chosen command: a login
-# shell (default) or Claude Code.
+# sessions, backed by tmux. Every session runs a bubblewrap-sandboxed
+# login shell inside the workspace. To launch Claude Code, type `claude`
+# inside the shell — that triggers an Authelia TOTP gate and breaks the
+# pane out of the sandbox (see platform/ttyd/claude-break-out.py).
 #
 # This is the command ttyd runs for the browser terminal
 # (see platform/ttyd/ttyd-sessions.service.template). It also works over SSH.
@@ -48,9 +50,12 @@ USER_RE='^[a-z_][a-z0-9_-]{0,30}$'
 # valid in a session name (NAME_RE), and rare in paths; we put path last
 # and read it as the final field so any stray `|` stays with the path.
 SEP='|'
-# Allowed command choices. Keep this set tight — it's the safety boundary
-# for what a user can run inside a session.
-CMD_ALLOWLIST=(shell claude)
+# Allowed command choices. Sessions are always sandboxed shells now;
+# Claude Code launches from inside the shell via the TOTP-gated `claude`
+# shim on PATH. The CMD_ALLOWLIST is kept as a single-entry tuple in case
+# we add other session-creation commands later (the `cmd` marker file and
+# label-routing code still expect a label).
+CMD_ALLOWLIST=(shell)
 CMD_DEFAULT=shell
 
 # --- output helpers (all to stderr; stdout is reserved for return values) --
@@ -88,17 +93,17 @@ resolve_shell() {
 #
 # `shell` runs inside a bubblewrap jail (/usr/local/bin/sandbox-shell does
 # the heavy lifting + computes the inside-jail cwd from $1) so accidental
-# `cd /etc; rm -rf .` from the browser can't reach the host. `sudo break`
-# (TOTP-gated) is the only way out — see platform/ttyd/break.py.
-#
-# `claude` runs unconfined: Claude needs the host's ~/.claude credentials,
-# git config, ssh keys, write access to project files, etc. — bind-mounting
-# every one of those into the jail would defeat the point.
+# `cd /etc; rm -rf .` from the browser can't reach the host. Two TOTP-gated
+# break-outs are available from inside:
+#   * `sudo break`   — drops to an unconfined login bash
+#   * `claude`       — runs the unconfined Claude Code (via the
+#                      /usr/local/bin/claude shim that sandbox-shell
+#                      bind-mounts into the jail)
+# See platform/ttyd/break.py and platform/ttyd/claude-break-out.py.
 resolve_cmd_argv() {
   local label="${1-}" dir="${2-}"
   case "$label" in
-    shell)  printf '%s\n' /usr/local/bin/sandbox-shell "${dir:-${WORKSPACE_ROOT}}" ;;
-    claude) printf 'claude\n' ;;
+    shell) printf '%s\n' /usr/local/bin/sandbox-shell "${dir:-${WORKSPACE_ROOT}}" ;;
     *) return 1 ;;
   esac
 }
@@ -242,36 +247,8 @@ choose_dir() {
   printf '%s\n' "$abs"
 }
 
-# choose_cmd — prompt for a command label; echo a valid label to stdout, or
-# return 1 if cancelled. Hides the claude option if the binary is missing.
-choose_cmd() {
-  local has_claude=0 ans
-  command -v claude >/dev/null 2>&1 && has_claude=1
-  {
-    printf '\n  Command:\n'
-    printf '    1) shell  (login shell — default)\n'
-    if [ "$has_claude" -eq 1 ]; then
-      printf '    2) claude (Claude Code)\n'
-    else
-      printf '    2) claude (unavailable — not installed)\n'
-    fi
-    printf '\n  Pick a number. Blank picks 1.\n  > '
-  } >&2
-  read -r ans || return 1
-  case "${ans:-1}" in
-    1|shell)               printf 'shell\n' ;;
-    2|claude)
-      if [ "$has_claude" -ne 1 ]; then
-        err "claude is not installed on this server."
-        return 1
-      fi
-      printf 'claude\n' ;;
-    *) err "invalid choice."; return 1 ;;
-  esac
-}
-
 new_session_flow() {
-  local name dir label
+  local name dir
   printf '\n  New session name (letters, digits, _ -): ' >&2
   read -r name || return 0
   if ! valid_name "$name"; then
@@ -283,8 +260,9 @@ new_session_flow() {
     return 0
   fi
   dir="$(choose_dir "$name")"   || { dim "  cancelled."; return 0; }
-  label="$(choose_cmd)"         || { dim "  cancelled."; return 0; }
-  open_session "$name" "$dir" "$label"
+  # Only one session command type today (sandboxed shell). Claude runs from
+  # inside the shell via the TOTP-gated `claude` shim.
+  open_session "$name" "$dir" "$CMD_DEFAULT"
 }
 
 kill_by_index() {
@@ -356,18 +334,17 @@ menu() {
 }
 
 main() {
-  local arg="${1-}" dir label
+  local arg="${1-}" dir
   setup
   if [ -n "$arg" ]; then
     if valid_name "$arg"; then
       if tm has-session -t "=$arg" 2>/dev/null; then
         open_session "$arg"
       else
-        # A new session named via the ttyd URL — ask where to open it and
-        # which command to run. Defaults to the shell on a quiet enter.
+        # A new session named via the ttyd URL — ask only where to open it.
+        # Command type is fixed to sandboxed shell.
         if dir="$(choose_dir "$arg")"; then
-          label="$(choose_cmd)" || label="$CMD_DEFAULT"
-          open_session "$arg" "$dir" "$label"
+          open_session "$arg" "$dir" "$CMD_DEFAULT"
         fi
       fi
     else

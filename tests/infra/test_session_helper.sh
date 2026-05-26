@@ -49,7 +49,9 @@ nope valid_user 1user
 
 echo "valid_cmd:"
 yes  valid_cmd shell
-yes  valid_cmd claude
+# `claude` is no longer a session-creation command — it's invoked from
+# inside a sandboxed shell via the TOTP-gated /usr/local/bin/claude shim.
+nope valid_cmd claude
 nope valid_cmd ""
 nope valid_cmd "bash"
 nope valid_cmd "rm"
@@ -67,7 +69,7 @@ eq "shell argv[1] is the requested dir" \
 eq "shell argv defaults dir to workspace root" \
    "$WS" \
    "$(resolve_cmd_argv shell | sed -n 2p)"
-eq "claude argv is 'claude'" "claude" "$(resolve_cmd_argv claude)"
+nope resolve_cmd_argv claude
 nope resolve_cmd_argv bogus
 
 echo "confine_dir:"
@@ -87,8 +89,12 @@ fi
 
 echo "markers:"
 USER_ID="alice"
+# The marker file mechanism still accepts any string — it's a label store,
+# not the auth boundary (CMD_ALLOWLIST is). Older sessions on disk may
+# still have a 'claude' marker; we round-trip arbitrary strings so the
+# helper doesn't crash when reading legacy markers.
 write_marker "foo" "claude"
-eq "marker round-trip claude" "claude" "$(read_marker foo)"
+eq "marker round-trip legacy claude label" "claude" "$(read_marker foo)"
 write_marker "bar" "shell"
 eq "marker round-trip shell"  "shell"  "$(read_marker bar)"
 eq "default when missing"     "shell"  "$(read_marker nonexistent)"
@@ -100,10 +106,10 @@ export SESSION_DRYRUN=1
 tm() { return 1; }   # stub: session does not exist
 eq "creates when absent (shell default)" \
    "CREATE foo $WS/foo shell" "$(open_session foo "$WS/foo")"
-eq "creates when absent (claude explicit)" \
-   "CREATE bar $WS/bar claude" "$(open_session bar "$WS/bar" claude)"
-eq "bad cmd falls back to default" \
+eq "rejected cmd falls back to default" \
    "CREATE baz $WS/baz shell" "$(open_session baz "$WS/baz" bogus)"
+eq "removed cmd 'claude' also falls back to default" \
+   "CREATE qux $WS/qux shell" "$(open_session qux "$WS/qux" claude)"
 tm() { return 0; }   # stub: session exists
 eq "attaches when present" "ATTACH foo"        "$(open_session foo)"
 
