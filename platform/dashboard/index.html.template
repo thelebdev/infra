@@ -199,10 +199,10 @@
         <input type="text" id="ns-dir" list="ws-dirs"
                placeholder="project directory (blank = workspace root)">
         <datalist id="ws-dirs"></datalist>
-        <select id="ns-cmd" title="What to run in the session">
-          <option value="shell" selected>Shell</option>
-          <option value="claude" id="ns-cmd-claude">Claude Code</option>
-        </select>
+        <!-- Sessions are always sandboxed shells. Claude Code launches
+             from inside the shell via the TOTP-gated `claude` shim that
+             sandbox-shell bind-mounts at /usr/local/bin/claude. -->
+        <input type="hidden" id="ns-cmd" value="shell">
         <button type="submit">Start session</button>
       </form>
       <div class="banner" id="ns-error" hidden></div>
@@ -219,7 +219,6 @@
     var nameEl = document.getElementById("ns-name");
     var dirEl = document.getElementById("ns-dir");
     var cmdEl = document.getElementById("ns-cmd");
-    var cmdClaudeOpt = document.getElementById("ns-cmd-claude");
     var dirList = document.getElementById("ws-dirs");
     var timer = null;
 
@@ -313,12 +312,11 @@
     }
 
     function loadCapabilities() {
-      return api("GET", "/api/capabilities").then(function (d) {
-        if (cmdClaudeOpt && d && d.claude_installed === false) {
-          cmdClaudeOpt.disabled = true;
-          cmdClaudeOpt.textContent = "Claude Code (unavailable)";
-        }
-      }).catch(function () {});
+      // /api/capabilities still reports claude_installed so the operator
+      // can see (separately, not gated here) whether the binary is on
+      // PATH for the in-shell `claude` shim — but session creation no
+      // longer offers Claude as a launch type, so nothing to disable.
+      return api("GET", "/api/capabilities").then(function () {}).catch(function () {});
     }
 
     function refresh() {

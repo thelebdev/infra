@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# claude-shim — bind-mounted by sandbox-shell at /usr/local/bin/claude
+# inside the bubblewrap sandbox. Outside the sandbox, /usr/local/bin/claude
+# does not exist; the real binary lives at ~/.local/bin/claude.
+#
+# Lets the operator type plain `claude` inside the sandbox — the shim adds
+# the implicit `sudo` so /etc/sudoers.d/break gets to enforce password +
+# TOTP before claude-break-out runs.
+#
+# Args are passed through, but currently claude-break-out ignores them
+# (the respawned pane just `exec claude` with no args). Adding arg
+# pass-through is a follow-up.
+exec sudo /usr/local/sbin/claude-break-out "$@"
