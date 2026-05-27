@@ -152,11 +152,13 @@ deploy_for_user() {
   local claude_home="${home}/.claude"
   local skills_dst="${claude_home}/skills"
   local commands_dst="${claude_home}/commands"
+  local hooks_dst="${claude_home}/hooks"
 
   # ~/.claude/ (mode 700, owned by the user). install -d is idempotent.
   _own_install_d 700 "${user}" "${claude_home}"
   _own_install_d 755 "${user}" "${skills_dst}"
   _own_install_d 755 "${user}" "${commands_dst}"
+  [ -d "${HOOKS_SRC:-}" ] && _own_install_d 755 "${user}" "${hooks_dst}"
 
   # Link every skill. New ones added to the repo land automatically on next run.
   local entry name
@@ -173,6 +175,17 @@ deploy_for_user() {
     link_into "${user}" "${entry}" "${commands_dst}/${name}"
   done
 
+  # Link every hook script (PreToolUse private-info scanner, etc.). The
+  # operator's ~/.claude/settings.json references these by absolute path,
+  # so the symlink target must exist before Claude Code starts.
+  if [ -d "${HOOKS_SRC:-}" ]; then
+    for entry in "${HOOKS_SRC}"/*.sh; do
+      [ -f "${entry}" ] || continue
+      name="$(basename "${entry}")"
+      link_into "${user}" "${entry}" "${hooks_dst}/${name}"
+    done
+  fi
+
   # Seed templates only if missing — never overwrite the operator's own copy.
   copy_if_missing "${user}" "${CLAUDE_MD_SRC}" "${claude_home}/CLAUDE.md" 644
   copy_if_missing "${user}" "${SETTINGS_SRC}" "${claude_home}/settings.json" 644
@@ -187,6 +200,7 @@ deploy_for_user() {
 CLAUDE_SRC="${INFRA_ROOT}/platform/claude"
 SKILLS_SRC="${CLAUDE_SRC}/skills"
 COMMANDS_SRC="${CLAUDE_SRC}/commands"
+HOOKS_SRC="${CLAUDE_SRC}/hooks"
 CLAUDE_MD_SRC="${CLAUDE_SRC}/CLAUDE.md.example"
 SETTINGS_SRC="${CLAUDE_SRC}/settings.json.example"
 AUTHELIA_USERS_DB="${INFRA_ROOT}/platform/authelia/users_database.yml"
@@ -195,6 +209,7 @@ AUTHELIA_USERS_DB="${INFRA_ROOT}/platform/authelia/users_database.yml"
 [ -d "${COMMANDS_SRC}" ] || die "missing ${COMMANDS_SRC}"
 [ -f "${CLAUDE_MD_SRC}" ]|| die "missing ${CLAUDE_MD_SRC}"
 [ -f "${SETTINGS_SRC}" ] || die "missing ${SETTINGS_SRC}"
+# HOOKS_SRC is optional; the deployer no-ops on missing hooks/.
 
 # Resolve the admin user the same way 09-claude-code.sh does.
 ADMIN="${SERVER_ADMIN_USER:-${SUDO_USER:-}}"

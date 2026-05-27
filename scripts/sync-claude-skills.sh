@@ -55,10 +55,12 @@ esac
 [ -d "${SRC}/commands" ]      || die "no ${SRC}/commands"
 [ -f "${SRC}/CLAUDE.md" ]     || die "no ${SRC}/CLAUDE.md"
 [ -f "${SRC}/settings.json" ] || die "no ${SRC}/settings.json"
+# hooks/ is optional — only operators using PreToolUse hooks will have one.
 
 command -v rsync >/dev/null 2>&1 || die "rsync not installed"
 
 mkdir -p "${DST}/skills" "${DST}/commands"
+[ -d "${SRC}/hooks" ] && mkdir -p "${DST}/hooks"
 
 echo "sync-claude-skills: mirroring ${SRC} -> ${DST#${REPO_ROOT}/}"
 echo "  excluded skills: ${EXCLUDED_SKILLS[*]}"
@@ -85,6 +87,13 @@ done
 
 # Mirror commands.
 rsync -a --delete "${SRC}/commands/" "${DST}/commands/"
+
+# Mirror hooks (if any). The hook scripts are publishable; the operator's
+# personal exclusion list at ~/.claude/private-info.deny is NOT in ~/.claude/hooks/
+# and stays local.
+if [ -d "${SRC}/hooks" ]; then
+  rsync -a --delete "${SRC}/hooks/" "${DST}/hooks/"
+fi
 
 # CLAUDE.md: copy up to (but not including) the cutoff marker. Refuse if the
 # marker is missing — it likely means the operator forgot to demarcate.

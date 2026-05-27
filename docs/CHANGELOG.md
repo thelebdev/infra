@@ -8,6 +8,29 @@ Each entry: date, mode (Maintain / Manage / Create), one-line summary.
 
 ## Entries
 
+- **2026-05-27** — Create — **PreToolUse hook to block leaking private info
+  on `git commit` / `git push`.** New `platform/claude/hooks/check-private-info.sh`
+  reads the PreToolUse JSON, gates to Bash commands containing
+  `git commit` or `git push`, scans the staged diff (for commit) or the
+  unpushed-commits log (for push) for API keys, private key blocks,
+  credential-shaped assignments, real email addresses, public IPv4
+  addresses (RFC1918 / loopback / docs ranges filtered), and any
+  operator-local patterns from `~/.claude/private-info.deny` (gitignored).
+  Repo visibility is resolved via `gh repo view --json visibility`:
+  **public** repos get a `permissionDecision: deny` JSON response that
+  blocks the tool call and surfaces the findings as the deny reason;
+  **private** repos get a `systemMessage` warning banner and proceed;
+  unknown visibility (no remote, no `gh`, gh unauthenticated) defaults
+  to deny — better to bother the operator than to leak.
+  Wired into `~/.claude/settings.json` via `hooks.PreToolUse[Bash]`,
+  applies to every Claude session globally. Mirrored to the public
+  bundle via the existing sync flow; the deployer
+  (`bootstrap/12-claude-skills.sh`) now symlinks `hooks/` into every
+  operator's `~/.claude/hooks/` so the hook script referenced from
+  `settings.json` resolves on each box. Pure-function tests under
+  `tests/infra/test_check_private_info.sh` pin the detection patterns
+  (18 tests, all passing).
+
 - **2026-05-27** — Create — **Claude skills, commands, and starter
   templates deployed per operator.** New `platform/claude/` holds the
   publishable skill library (28 skills under `skills/`, 3 commands under

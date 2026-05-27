@@ -31,13 +31,15 @@ REPO="${FIX_ROOT}/repo"
 HOME_FAKE="${FIX_ROOT}/home"
 SKILLS_SRC="${REPO}/platform/claude/skills"
 COMMANDS_SRC="${REPO}/platform/claude/commands"
+HOOKS_SRC="${REPO}/platform/claude/hooks"
 CLAUDE_MD_SRC="${REPO}/platform/claude/CLAUDE.md.example"
 SETTINGS_SRC="${REPO}/platform/claude/settings.json.example"
 
-mkdir -p "${SKILLS_SRC}/alpha" "${SKILLS_SRC}/beta" "${COMMANDS_SRC}" "${HOME_FAKE}"
+mkdir -p "${SKILLS_SRC}/alpha" "${SKILLS_SRC}/beta" "${COMMANDS_SRC}" "${HOOKS_SRC}" "${HOME_FAKE}"
 printf 'alpha skill\n'  > "${SKILLS_SRC}/alpha/SKILL.md"
 printf 'beta skill\n'   > "${SKILLS_SRC}/beta/SKILL.md"
 printf 'cmd alpha\n'    > "${COMMANDS_SRC}/alpha.md"
+printf '#!/bin/sh\n'    > "${HOOKS_SRC}/check.sh"
 printf 'template md\n'  > "${CLAUDE_MD_SRC}"
 printf '{"x":1}\n'      > "${SETTINGS_SRC}"
 
@@ -129,6 +131,8 @@ deploy_for_user "${USER}" "${USER_HOME}" >/dev/null 2>&1
   || no "deploy: beta skill linked"
 [ -L "${USER_HOME}/.claude/commands/alpha.md" ] && ok "deploy: command linked" \
   || no "deploy: command linked"
+[ -L "${USER_HOME}/.claude/hooks/check.sh" ] && ok "deploy: hook linked" \
+  || no "deploy: hook linked"
 [ -f "${USER_HOME}/.claude/CLAUDE.md" ] && [ ! -L "${USER_HOME}/.claude/CLAUDE.md" ] \
   && ok "deploy: CLAUDE.md seeded as real file" \
   || no "deploy: CLAUDE.md seeded as real file"

@@ -9,9 +9,17 @@ repo and get deployed to every operator's `~/.claude/` on bootstrap.
 platform/claude/
 ├── skills/                  # one dir per skill, each contains SKILL.md
 ├── commands/                # slash-commands (one .md per command)
+├── hooks/                   # PreToolUse / PostToolUse hook scripts
 ├── CLAUDE.md.example        # sanitized global-preferences template
-└── settings.json.example    # status line, plugins, defaults
+└── settings.json.example    # status line, plugins, hooks, defaults
 ```
+
+The `hooks/` dir ships with `check-private-info.sh` — a PreToolUse hook
+referenced from `settings.json.example` that scans staged/unpushed changes
+for API keys, secrets, public IPs, emails, and operator-specific patterns
+before `git commit` / `git push`. On a **public** repo it blocks the
+operation; on a **private** repo it warns but allows. Findings are passed
+back to Claude as the deny reason so the model can sanitize and retry.
 
 The deployer that distributes these is `bootstrap/12-claude-skills.sh`.
 It runs as part of `bootstrap.sh` (gated by `INSTALL_CLAUDE_SKILLS`,
@@ -27,6 +35,7 @@ also exists as a Linux user with a home directory):
 |---------------------------------------|------------------|--------------------|
 | `skills/<name>` (per skill)           | **symlink** into the repo | `git pull` → updated instantly. Stale symlinks pointing elsewhere are replaced. |
 | `commands/<name>.md` (per command)    | **symlink** into the repo | Same as above. |
+| `hooks/<name>.sh` (per hook)          | **symlink** into the repo | Same as above. Referenced by absolute path from `settings.json`. |
 | `CLAUDE.md`                           | **copy** from `CLAUDE.md.example` | Created only when absent. Never overwritten. |
 | `settings.json`                       | **copy** from `settings.json.example` | Created only when absent. Never overwritten. |
 
