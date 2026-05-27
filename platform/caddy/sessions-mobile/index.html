@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>sessions (mobile)</title>
+<style>
+  :root { --bar-h: 46px; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #eee; overflow: hidden; overscroll-behavior: none; }
+  #frame { display: block; border: 0; width: 100vw; height: calc(100vh - var(--bar-h) - env(safe-area-inset-bottom, 0px)); background: #000; }
+  #bar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: calc(var(--bar-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    display: flex; align-items: stretch; overflow-x: auto;
+    background: #141414; color: #ddd;
+    border-top: 1px solid #2a2a2a;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    user-select: none; -webkit-user-select: none; touch-action: pan-x;
+  }
+  #bar::-webkit-scrollbar { display: none; }
+  #bar button {
+    flex: 0 0 auto; min-width: 44px; padding: 0 12px;
+    border: 0; border-right: 1px solid #262626;
+    background: transparent; color: inherit; font: inherit;
+    touch-action: manipulation; cursor: pointer;
+  }
+  #bar button:active, #bar button.on { background: #2a2a2a; color: #fff; }
+  #bar button.sticky.on { background: #3a3a3a; color: #ffd479; }
+</style>
+</head>
+<body>
+<iframe id="frame" title="terminal" allow="clipboard-read; clipboard-write"></iframe>
+<div id="bar" role="toolbar" aria-label="terminal keys">
+  <button data-seq="\x1b">Esc</button>
+  <button data-seq="\t">Tab</button>
+  <button class="sticky" data-mod="ctrl">Ctrl</button>
+  <button data-seq="\x1b[A" aria-label="up">&uarr;</button>
+  <button data-seq="\x1b[B" aria-label="down">&darr;</button>
+  <button data-seq="\x1b[D" aria-label="left">&larr;</button>
+  <button data-seq="\x1b[C" aria-label="right">&rarr;</button>
+  <button data-seq="\x03">^C</button>
+  <button data-seq="\x04">^D</button>
+  <button data-seq="\x12">^R</button>
+  <button data-seq="\x15">^U</button>
+  <button data-seq="\x17">^W</button>
+  <button data-seq="\x1a">^Z</button>
+  <button data-seq="\x0c">^L</button>
+  <button data-seq="\x01">Home</button>
+  <button data-seq="\x05">End</button>
+  <button data-seq="|">|</button>
+  <button data-seq="~">~</button>
+  <button data-seq="/">/</button>
+  <button data-seq="-">-</button>
+  <button data-seq="_">_</button>
+  <button data-seq="$">$</button>
+  <button data-seq="*">*</button>
+  <button data-seq="&">&amp;</button>
+  <button data-seq="#">#</button>
+  <button data-seq="\x1b[5~">PgUp</button>
+  <button data-seq="\x1b[6~">PgDn</button>
+</div>
+<script>
+(function () {
+  var frame = document.getElementById('frame');
+  var bar = document.getElementById('bar');
+
+  // Carry the original query (?arg=<session>) into the iframe so existing
+  // bookmarks like /m/?arg=foo land on the right tmux session.
+  frame.src = '/' + (location.search || '');
+
+  // Decode the \xNN escapes the buttons declare — the HTML attribute value
+  // is a literal "\x1b" string, not the byte. data-mod is handled separately.
+  function decodeSeq(s) {
+    return s.replace(/\\x([0-9a-fA-F]{2})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    }).replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\n/g, '\n');
+  }
+
+  // Find xterm.js's hidden helper textarea inside the iframe and make it
+  // behave like a CLI input on mobile: no first-letter capital, no autocorrect,
+  // no autocomplete, no spellcheck. xterm.js mounts asynchronously, so retry.
+  function findTextarea() {
+    try {
+      var doc = frame.contentDocument;
+      return doc && doc.querySelector('textarea.xterm-helper-textarea');
+    } catch (e) { return null; }
+  }
+
+  function applyInputFix(ta) {
+    ta.setAttribute('autocapitalize', 'none');
+    ta.setAttribute('autocorrect', 'off');
+    ta.setAttribute('autocomplete', 'off');
+    ta.setAttribute('spellcheck', 'false');
+    ta.setAttribute('inputmode', 'text');
+    ta.setAttribute('enterkeyhint', 'send');
+  }
+
+  frame.addEventListener('load', function () {
+    var tries = 0;
+    var iv = setInterval(function () {
+      var ta = findTextarea();
+      if (ta) { applyInputFix(ta); clearInterval(iv); return; }
+      if (++tries > 50) clearInterval(iv);
+    }, 100);
+  });
+
+  // Send raw bytes the way xterm.js receives keystrokes from the OS keyboard:
+  // write into the helper textarea and fire an `input` event. xterm.js reads
+  // the textarea value, sends it down its WebSocket, and clears the field.
+  // This bypasses the keydown->sequence translation, which is fine because
+  // the buttons already declare the exact byte sequence to emit (incl. arrow
+  // keys in cursor-mode; apps in application-cursor mode are rare on mobile).
+  function sendBytes(s) {
+    var ta = findTextarea();
+    if (!ta) return;
+    ta.focus();
+    var win = frame.contentWindow;
+    var proto = win.HTMLTextAreaElement && win.HTMLTextAreaElement.prototype;
+    var setter = proto && Object.getOwnPropertyDescriptor(proto, 'value').set;
+    if (setter) setter.call(ta, s); else ta.value = s;
+    ta.dispatchEvent(new win.Event('input', { bubbles: true }));
+  }
+
+  // Ctrl is a sticky modifier: tap Ctrl, then tap a letter button, and the
+  // letter is converted to its control byte (Ctrl-A=0x01 ... Ctrl-Z=0x1a)
+  // before being sent. Sticky state clears after one use.
+  var ctrlBtn = bar.querySelector('button.sticky[data-mod="ctrl"]');
+  var ctrlArmed = false;
+  function setCtrl(on) {
+    ctrlArmed = on;
+    if (ctrlBtn) ctrlBtn.classList.toggle('on', on);
+  }
+
+  function ctrlByteFor(s) {
+    if (s.length !== 1) return null;
+    var c = s.charCodeAt(0);
+    if (c >= 97 && c <= 122) return String.fromCharCode(c - 96); // a-z -> 1-26
+    if (c >= 65 && c <= 90)  return String.fromCharCode(c - 64); // A-Z -> 1-26
+    return null;
+  }
+
+  bar.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    e.preventDefault();
+
+    if (b.dataset.mod === 'ctrl') { setCtrl(!ctrlArmed); return; }
+
+    var seq = b.dataset.seq;
+    if (seq == null) return;
+    seq = decodeSeq(seq);
+
+    if (ctrlArmed) {
+      var cb = ctrlByteFor(seq);
+      if (cb) seq = cb;
+      setCtrl(false);
+    }
+    sendBytes(seq);
+  }, { passive: false });
+
+  // Stop the toolbar from stealing focus from the textarea — keep the OS
+  // keyboard up between presses.
+  bar.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  bar.addEventListener('touchstart', function (e) {
+    if (e.target.closest('button')) e.preventDefault();
+  }, { passive: false });
+})();
+</script>
+</body>
+</html>

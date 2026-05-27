@@ -8,6 +8,20 @@ Each entry: date, mode (Maintain / Manage / Create), one-line summary.
 
 ## Entries
 
+- **2026-05-27** — Create — **Mobile-friendly browser sessions.** Mobile
+  user agents hitting `sessions.<domain>/` are 302'd to a static wrapper
+  at `/m/` that iframes ttyd and overlays a CLI key bar — Esc, Tab,
+  arrows, sticky Ctrl modifier, ^C/^D/^R/^U/^W/^Z/^L, Home/End, PgUp/PgDn,
+  and the punctuation that mobile keyboards bury two taps deep
+  (`|` `~` `/` `-` `_` `$` `*` `&` `#`). The wrapper also patches
+  xterm.js's hidden helper textarea on load to disable iOS/Android
+  first-letter capitalization, autocorrect, autocomplete and spellcheck —
+  the things that turned `ls` into `Ls` and `cd ..` into `cd…`. Desktop
+  UAs see the unmodified ttyd at `/`; the redirect is UA-gated. Adds
+  `platform/caddy/sessions-mobile/index.html`, a `secure_headers_sessions`
+  Caddy snippet (X-Frame-Options SAMEORIGIN so the same-origin iframe
+  loads), and a bind-mount of the new dir into the Caddy container.
+
 - **2026-05-26** — Create — **Sandboxed shell sessions with TOTP-gated
   break-out.** Browser shell sessions now run inside a `bubblewrap` jail
   by default. The jail mounts the host root read-only, hides every

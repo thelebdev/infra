@@ -31,6 +31,19 @@
 	}
 }
 
+# Same as secure_headers but relaxes X-Frame-Options to SAMEORIGIN so the
+# mobile wrapper at /m/ can iframe the ttyd root on the same subdomain.
+# Used only on the sessions vhost — every other vhost stays DENY.
+(secure_headers_sessions) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
 # Snippet: gate a route on a valid Authelia session.
 #
 # IMPORTANT — the *caller* must wrap this import inside a `route { }` block.
@@ -99,10 +112,39 @@ __PRIMARY_DOMAIN__, __SUBDOMAIN_DASHBOARD__.__PRIMARY_DOMAIN__ {
 
 # >>>component:sessions
 # Browser terminal sessions (shell or Claude Code) via ttyd. Gated by Authelia.
+#
+# Mobile UX: /m/ serves a static wrapper page that iframes ttyd and overlays
+# a CLI key bar (Esc, Tab, arrows, Ctrl-*, |, ~, /, ...). The wrapper also
+# patches xterm.js's hidden helper textarea to disable iOS/Android first-letter
+# capitalization, autocorrect, and autocomplete on every keystroke. Mobile
+# user agents that hit `/` are 302'd to `/m/` so existing bookmarks "just work".
+# Desktop UAs see the unmodified ttyd at `/` as before.
+#
+# Iframing requires X-Frame-Options to allow same-origin — see the
+# secure_headers_sessions snippet above.
 __SUBDOMAIN_SESSIONS__.__PRIMARY_DOMAIN__ {
-	import secure_headers
+	import secure_headers_sessions
 	route {
 		import authelia_gate
+
+		# Mobile wrapper assets — static files under /srv/sessions-mobile.
+		handle_path /m/* {
+			root * /srv/sessions-mobile
+			file_server
+		}
+		handle /m {
+			redir /m/ 301
+		}
+
+		# Auto-route mobile UAs landing on `/` into the wrapper, preserving
+		# the original ?arg=<session> query. `Mobi` matches Android Chrome
+		# and Mobile Safari; `iPhone` belt-and-suspenders for older UAs.
+		@sessions_mobile_root {
+			path /
+			header_regexp User-Agent (Mobi|Android|iPhone|iPod)
+		}
+		redir @sessions_mobile_root /m/?{query} 302
+
 		reverse_proxy 127.0.0.1:7681
 	}
 }
