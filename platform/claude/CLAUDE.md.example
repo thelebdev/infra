@@ -1,9 +1,4 @@
-# Default coding preferences for Claude Code
-#
-# This file is a starting template. The bootstrap copies it to ~/.claude/CLAUDE.md
-# only if no file already exists there. Once copied, it is yours — edit freely.
-# Add a "My context" section at the bottom with your name, role, time zone, and
-# anything else that helps Claude tailor its work to you.
+# Personal coding preferences for Claude Code
 
 ## Communication style
 
@@ -47,7 +42,7 @@
 ## Environment and secrets
 
 - Configuration via `.env` locally, with a `.env.example` checked in.
-- Secrets: a managed secret manager (Bitwarden, 1Password, Vault, Doppler, AWS Secrets Manager, etc.) is the source of truth. Always tell me which secret store you're touching.
+- Secrets: my managed secret manager (see `SECRET_MANAGER` in "My defaults") is the source of truth. Always tell me which secret store you're touching.
 - Always ASK before writing to the secret store. Never read credentials silently into chat — if you need a credential, name it and ask me to paste it.
 - Never echo secrets back in chat. Never log them.
 
@@ -65,7 +60,7 @@
 - Never change credentials or any secret value.
 - Never `git push --force` (or `--force-with-lease`).
 - Never delete files outside the working directory.
-- Never write to a secret manager without asking first.
+- Never write to the secret store without asking first.
 - Never run destructive database operations (DROP, TRUNCATE, DELETE without WHERE).
 - Never make external network calls that cost money (API calls billed per request) without confirming.
 
@@ -83,8 +78,8 @@
 
 ## Deployment defaults
 
-- Ubuntu VPS + Docker + Caddy for backend services unless I say otherwise.
-- Vercel / Cloudflare Pages for static or edge-friendly frontends, only if appropriate.
+- Ubuntu VPS + Docker + Caddy for backend services unless I say otherwise (see `PREFERRED_VPS` in "My defaults" for my go-to provider).
+- Vercel/Cloudflare Pages for static or edge-friendly frontends, only if appropriate.
 - Always ask which VPS / which environment before deploying anything new.
 
 ## Skills are how I extend you
@@ -94,6 +89,3 @@
 - When starting a new project, run the matching `new-*` skill. Don't improvise the bootstrap.
 - When in doubt about whether a skill applies, name the skill you're considering and ask.
 
-## My context
-
-<!-- Edit this section to describe yourself: name, role, languages you work in, time zone, tech preferences. -->

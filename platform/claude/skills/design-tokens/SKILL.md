@@ -1,6 +1,6 @@
 ---
 name: design-tokens
-description: Sets up design tokens (colors, spacing, typography, radii, shadows) for a new project. Asks for project-specific brand inputs or uses the configured default brand source if user picks Default. Use when starting any frontend project.
+description: Sets up design tokens (colors, spacing, typography, radii, shadows) for a new project. Asks for project-specific brand inputs or uses the operator's default brand source (DEFAULT_BRAND_URL from ~/.claude/CLAUDE.md "My defaults") if user picks Default. Use when starting any frontend project.
 ---
 
 # Design tokens setup
@@ -13,15 +13,16 @@ description: Sets up design tokens (colors, spacing, typography, radii, shadows)
 ## Steps
 
 1. Ask me which mode to use:
-   - **Default**: Use the configured default brand source. (See "fetch defaults" below.)
+   - **Default**: Use the operator's default brand source. (See "fetch defaults" below.)
    - **Custom**: Walk through a series of questions for this specific project.
    - **From screenshots/palettes**: I'll provide reference images, you derive tokens from them.
 
 ### Fetch defaults (Default mode)
 
-1. Ask me for the default brand source URL (or read `DEFAULT_BRAND_URL` from the environment if set). WebFetch it to extract current brand colors and typography.
-2. If the URL is unreachable or unset, ask me to paste the hex values and font names.
-3. Use those as the project defaults.
+1. Read `DEFAULT_BRAND_URL` from the "My defaults" section of `~/.claude/CLAUDE.md`. If unset, ask me to provide one.
+2. WebFetch that URL to extract current brand colors and typography.
+3. If the URL is unreachable, ask me to paste the hex values and font names.
+4. Use those as the project defaults.
 
 ### Custom mode questions (ask in this order, one at a time)
 

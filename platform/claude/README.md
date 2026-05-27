@@ -34,13 +34,40 @@ The deployer is **idempotent** (safe to re-run on every `git pull`) and
 **non-destructive** (a real file or user-modified directory in
 `~/.claude/skills/<name>` is preserved with a WARN log — never clobbered).
 
-## How operators customize a skill
+## Source of truth
 
-You have two options:
+The operator's `~/.claude/` on the dev box is the source of truth. Claude
+edits skills there mid-session (via `new-skill`, self-update flows, manual
+edits). `scripts/sync-claude-skills.sh` mirrors `~/.claude/` → this
+directory; `git pull` then rolls the new content to every server, where
+`bootstrap/12-claude-skills.sh` symlinks it into each user's `~/.claude/`.
 
-**1. Edit the skill in the repo** — the change goes through PR review and
-ships to every operator on the next deploy. This is the preferred path
-for changes that should benefit everyone.
+```
+~/.claude/ (dev box, source)
+    ↓ scripts/sync-claude-skills.sh
+platform/claude/ (this dir, repo mirror)
+    ↓ bootstrap/12-claude-skills.sh
+~/.claude/ (server users, symlinked from the repo)
+```
+
+Sync rules (enforced by `scripts/sync-claude-skills.sh`):
+
+- Skills mirrored 1:1 except for `EXCLUDED_SKILLS` (default:
+  `overall-infra-architect`). Operators can add personal skills to
+  `scripts/sync-claude-skills.local-exclude` (gitignored).
+- Commands mirrored 1:1.
+- `CLAUDE.md` copied up to (but not including) `<!-- PUBLIC-CUTOFF -->`.
+  Everything below stays private. Put `## My defaults`, `## My context`,
+  vault refs, and brand specifics below the marker.
+- `settings.json` copied verbatim.
+- The secret-and-PII scanner runs at the end. Findings abort the sync.
+
+## How operators customize a skill on a server
+
+Two options:
+
+**1. Edit on your dev box, sync, PR** — preferred. The change goes through
+review and ships to every operator on the next deploy.
 
 **2. Replace the symlink with a real directory** — local-only override.
 
@@ -57,21 +84,31 @@ and re-run `sudo /opt/infra/bootstrap/12-claude-skills.sh`.
 
 ## How to add a new skill
 
-1. `mkdir platform/claude/skills/<new-skill>` in the repo.
-2. Write `SKILL.md` with the standard frontmatter (`name:`, `description:`).
-3. Run the scanner: `./security/scan-claude-skills.sh`.
-4. Open a PR. CI runs the scanner automatically.
+1. Create it under `~/.claude/skills/<new-skill>/SKILL.md` on the dev box
+   (the `/new-skill` command does this).
+2. Use it for a while. Iterate.
+3. When it's ready to share: `./scripts/sync-claude-skills.sh` mirrors
+   `~/.claude/` into the repo and runs the scanner. Findings abort.
+4. Review the diff, commit, PR. CI re-runs the scanner.
 5. After merge, `git pull` on each server picks it up; the next run of
    `12-claude-skills.sh` symlinks it for every user. (Or it just appears
    on next bootstrap — symlinks are created lazily on every run.)
 
 ## How to update `CLAUDE.md` for everyone vs. just yourself
 
-- **Everyone**: edit `platform/claude/CLAUDE.md.example`. The change reaches
-  *new* operators only — existing `~/.claude/CLAUDE.md` files are never
-  overwritten, so existing operators stay on their personal version.
-- **Just yourself**: edit `~/.claude/CLAUDE.md` directly. Nothing in the
-  deploy path will touch it.
+Edit `~/.claude/CLAUDE.md` on the dev box.
+
+- Changes **above** the `<!-- PUBLIC-CUTOFF -->` marker reach the public
+  template (`platform/claude/CLAUDE.md.example`) on next sync, and from
+  there reach *new* operators only. Existing `~/.claude/CLAUDE.md` files
+  on servers are never overwritten.
+- Changes **below** the marker stay operator-private and never leave the
+  dev box.
+
+For personal vendor or brand specifics (Bitwarden, Hetzner, your brand
+URL, etc.), keep the prose generic above the cutoff and reference a named
+variable; put the concrete value in `## My defaults` below the cutoff.
+The `design-tokens` skill demonstrates this pattern with `DEFAULT_BRAND_URL`.
 
 ## What's not here (and why)
 
@@ -86,10 +123,3 @@ and re-run `sudo /opt/infra/bootstrap/12-claude-skills.sh`.
   API keys, public IPs, private keys, plus an operator's local deny
   patterns from `security/scan-claude-skills.deny` (gitignored).
 
-## Source of truth
-
-The repo is the source of truth on every machine where the deployer
-runs. If you also keep a personal `~/.claude/skills/` on a non-server
-machine (e.g. your laptop), you have two copies — re-sync intentionally,
-or convert the laptop's `~/.claude/skills/<name>` entries to symlinks
-pointing at your local clone of this repo.
