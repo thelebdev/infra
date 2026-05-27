@@ -8,6 +8,18 @@ Each entry: date, mode (Maintain / Manage / Create), one-line summary.
 
 ## Entries
 
+- **2026-05-27** — Maintain — **One-tap toggle to select-and-copy text from
+  the browser terminal.** Tmux mouse mode is on by default — great for
+  scrollback, but it owns click-drag, so text "selected" with the mouse
+  goes to tmux's buffer instead of being highlighted in the browser the
+  way it would be on any other web page. The fix is a tmux binding
+  `prefix C-s` that flips mouse mode, with a status-bar confirmation of
+  the new state. On desktop the operator types `Ctrl-b Ctrl-s` and then
+  drags to select / Cmd-C to copy. On mobile the /m/ wrapper exposes a
+  "Sel" toolbar button that sends the same sequence — one tap and
+  long-press → Copy works like any iOS/Android web page. Tap "Sel"
+  again to put mouse mode back on for scrolling.
+
 - **2026-05-27** — Create — **Mobile-friendly browser sessions.** Mobile
   user agents hitting `sessions.<domain>/` are 302'd to a static wrapper
   at `/m/` that iframes ttyd and overlays a CLI key bar — Esc, Tab,

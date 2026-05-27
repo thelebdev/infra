@@ -40,6 +40,12 @@
   <button data-seq="\x1b">Esc</button>
   <button data-seq="\t">Tab</button>
   <button class="sticky" data-mod="ctrl">Ctrl</button>
+  <!-- Sel sends tmux `prefix C-s`, which the session tmux.conf binds to
+       toggle mouse mode. Mouse on = tmux owns drag/scroll (great for
+       scrollback). Mouse off = browser-native text selection (long-press
+       to select → tap Copy on mobile, or Cmd/Ctrl-C on desktop). The
+       tmux status bar reports the new state on each toggle. -->
+  <button data-seq="\x02\x13" title="toggle mouse mode for text selection">Sel</button>
   <button data-seq="\x1b[A" aria-label="up">&uarr;</button>
   <button data-seq="\x1b[B" aria-label="down">&darr;</button>
   <button data-seq="\x1b[D" aria-label="left">&larr;</button>
