@@ -43,3 +43,8 @@ docs/*
 # lists their own personal identifiers locally; the list itself never lands
 # in the public repo.
 security/scan-claude-skills.deny
+
+# Authelia runtime state + render-pipeline artifacts
+platform/authelia/data/
+*.bak.[0-9]*
+platform/*/.version.json
