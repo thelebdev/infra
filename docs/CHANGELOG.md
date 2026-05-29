@@ -8,6 +8,25 @@ Each entry: date, mode (Maintain / Manage / Create), one-line summary.
 
 ## Entries
 
+- **2026-05-29** — Maintain — **Disabled `PrivateTmp` on
+  `ttyd-sessions.service`.** Removed the residual `PrivateTmp=true` directive
+  from `platform/ttyd/ttyd-sessions.service.template`. It survived the `bwrap`
+  sandbox removal (`aeb6982` + `bd6732d`) and had become a recurring failure
+  mode: the private `/tmp` backing dir (`/tmp/systemd-private-*`) is GC'd
+  mid-session while the namespace reference survives, leaving `/tmp` readable
+  but writes failing with `ENOENT` — which blocked Claude Code from launching
+  in new browser-shell sessions (`mkdir /tmp/claude-<uid>`) and forced
+  SSH-only recovery. `KillMode=process` (load-bearing — keeps sessions alive
+  across restarts) meant a plain `systemctl restart` could not clear it, since
+  surviving `tmux` servers re-exported the broken namespace. Browser sessions
+  now use the host `/tmp` like every other process. The perimeter (Authelia +
+  TOTP, key-only SSH + UFW + fail2ban, TLS) is the real boundary on a
+  single-admin box; with `bwrap` gone, `PrivateTmp` was belt-and-suspenders
+  against an unrealized threat model. Other confinement (`NoNewPrivileges`,
+  `ProtectSystem=strict`, `ReadWritePaths`) is unchanged; the 10-minute
+  recovery SLA is unchanged. See ADR
+  `docs/decisions/0001-disable-privatetmp-on-ttyd-sessions.md` (operator-local).
+
 - **2026-05-28** — Create — **`Caddyfile.d/` import mechanism for
   operator-local application vhosts.** The platform repo is
   application-agnostic; specific app backends (their hostnames, ports,

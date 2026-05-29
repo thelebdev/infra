@@ -6,6 +6,23 @@ CHANGELOG when delivered.
 
 ## Recently delivered
 
+### Disable `PrivateTmp` on `ttyd-sessions.service`
+
+Removed the residual `PrivateTmp=true` directive from
+`platform/ttyd/ttyd-sessions.service.template`. It survived the bwrap sandbox
+removal (`aeb6982` + `bd6732d`) and had become a recurring failure mode: the
+private `/tmp` backing dir (`/tmp/systemd-private-*`) is garbage-collected
+mid-session while the namespace reference survives, leaving `/tmp` readable
+but writes failing with `ENOENT` — which blocked Claude Code from launching
+in new browser-shell sessions and forced SSH-only recovery (a plain
+`systemctl restart` couldn't clear it because `KillMode=process` keeps the
+broken-namespace tmux servers alive). Browser sessions now use the host
+`/tmp`. Perimeter auth (Authelia + TOTP, key-only SSH + UFW + fail2ban, TLS)
+is the real boundary on a single-admin box; with bwrap gone, PrivateTmp was
+belt-and-suspenders against an unrealized threat model. Other confinement
+(`NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths`) is unchanged.
+See CHANGELOG 2026-05-29 and local ADR 0001.
+
 ### Generic browser terminal sessions (shell or Claude)
 
 The browser terminal stack is now command-agnostic. The subdomain moves

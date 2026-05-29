@@ -45,9 +45,13 @@ RestartSec=3
 # tmux servers behind it — so running sessions survive a service restart or
 # a bootstrap re-run.
 KillMode=process
-# Light sandboxing.
+# Light sandboxing. The systemd private-/tmp namespace flag is deliberately
+# NOT set: it leaves browser sessions wedged when the backing
+# /tmp/systemd-private-* dir is GC'd while the namespace reference survives
+# (KillMode=process keeps tmux servers alive across restarts, so the broken
+# /tmp re-exports to new tabs). On a single-admin box behind Authelia +
+# key-only SSH, host /tmp is the right default — see ADR 0001.
 NoNewPrivileges=true
-PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=__ADMIN_HOME__ __WORKSPACE_ROOT__
 ProtectHome=false
