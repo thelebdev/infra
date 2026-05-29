@@ -23,6 +23,21 @@ belt-and-suspenders against an unrealized threat model. Other confinement
 (`NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths`) is unchanged.
 See CHANGELOG 2026-05-29 and local ADR 0001.
 
+### Bubblewrap-confined shell sessions with break-out
+
+Browser shell sessions ran inside a `bwrap` jail: rootfs read-only,
+homes tmpfs, only `~/workspace` writable. `sudo break` (sudo password +
+Authelia TOTP) replaces the calling pane's process with an unconfined
+`bash -l` via `tmux respawn-pane`. Claude sessions skip the jail (cmd=
+claude → unconfined `claude`). See CHANGELOG 2026-05-26. (Note: the bwrap
+jail was subsequently removed in `aeb6982` + `bd6732d`; sessions now run an
+unconfined `bash -l` in the workspace.)
+
+Implementation cleared up one design assumption: a separate "supervisor"
+process turned out to be unnecessary. `tmux respawn-pane` already
+spawns the new process in tmux's context (outside the bwrap), so the
+pane simply *becomes* unconfined — same window, same scrollback.
+
 ### Generic browser terminal sessions (shell or Claude)
 
 The browser terminal stack is now command-agnostic. The subdomain moves
@@ -72,7 +87,12 @@ device with a browser, without an SSH client.
 
 ## Near term
 
+Ordered: the active bug first, then planned feature work by priority
+(P0 highest). Priority tags set 2026-05-29.
+
 ### Verify the dashboard /api/* auth gate actually fires (carry-over from 2026-05-25)
+
+**Priority.** Bug (active) — sits ahead of the P0–P3 feature work below.
 
 The dashboard's `/api/sessions` and `/api/workspace` still return 401
 "missing or ambiguous identity" through Caddy, even with the user logged
@@ -111,34 +131,19 @@ session-manager and the marker logic are fine; the failure is purely in
 Caddy forwarding the verified identity to `/api/*` inside the dashboard
 block.
 
-### Bubblewrap-confined shell sessions with break-out (DELIVERED 2026-05-26)
+### One-shot seed installer (`bootstrap/seed.sh`)
 
-Browser shell sessions now run inside a `bwrap` jail: rootfs read-only,
-homes tmpfs, only `~/workspace` writable. `sudo break` (sudo password +
-Authelia TOTP) replaces the calling pane's process with an unconfined
-`bash -l` via `tmux respawn-pane`. Claude sessions skip the jail (cmd=
-claude → unconfined `claude`). See CHANGELOG 2026-05-26.
+**Priority.** P0.
 
-Implementation cleared up one design assumption: a separate "supervisor"
-process turned out to be unnecessary. `tmux respawn-pane` already
-spawns the new process in tmux's context (outside the bwrap), so the
-pane simply *becomes* unconfined — same window, same scrollback.
+Curl-able installer for a brand-new VPS that fetches the repo to
+`/opt/infra` and runs `bootstrap.sh` end-to-end. Cuts the manual M1–M5 setup
+to a single command.
 
-### Per-app Authelia gate toggle in the dashboard
-
-A new "Public surface" panel on the dashboard that lists every subdomain
-Caddy is serving and lets the operator toggle "behind Authelia" on/off
-per subdomain. Discovery via Caddy's admin API at
-`127.0.0.1:2019/config/apps/http/servers/srv0/routes`. State persisted in
-a new `platform/caddy/gates.yml`; toggle hits a new session-manager
-endpoint that re-renders the Caddyfile, then calls
-`docker exec caddy caddy reload --config /etc/caddy/Caddyfile`. Toggling
-itself should require the same TOTP-from-CLI re-auth as `sudo break`
-(reuses the same TOTP-validation plumbing).
-
-**Status.** Not started. Specification draft pending.
+**Status.** Not started.
 
 ### Security posture monitor — passive agent
+
+**Priority.** P1.
 
 Continuous, low-touch assessment of the security state of every server
 running `infra`. Runs on a systemd timer (default: hourly), scores ~15
@@ -173,7 +178,36 @@ operator has approved current state.
 **Status.** Not started. Foundation for hardening signals and for the
 Security QA runbook (below) to verify against.
 
+### Backup orchestration
+
+**Priority.** P1.
+
+restic to S3-compatible storage (Hetzner Storage Box, Backblaze B2, etc.),
+daily snapshots, 30/12/12 retention, encrypted with
+`BACKUP_ENCRYPTION_PASSPHRASE`. Volumes registered in
+`platform/backup/registry.yml`. Restore runbook.
+
+**Status.** Stubbed in `docs/BACKUP_RESTORE.md`. Not implemented. Higher
+priority now: Authelia users added via `add-user.sh` live only in gitignored
+runtime files (`users_database.yml`, the Authelia SQLite DB,
+`platform/authelia/secrets/`). Without backups, a from-zero recovery
+restores only the seeded operator.
+
+### Alertmanager + SMTP routing
+
+**Priority.** P1.
+
+Prometheus alert rules per-app, alertmanager routing severities to email
+(P0–P3). Quiet hours configurable. Foundation for adding Slack/Telegram
+later.
+
+**Status.** Stubbed in `docs/ALERTING.md`. Not implemented.
+
 ### Security QA — adversarial test runbook + scripted probes
+
+**Priority.** P2. Higher leverage *after* the posture monitor lands (so the
+runbook has a baseline state to confirm), but the two can be specified in
+parallel.
 
 The dual of the posture monitor above: "we say the box is hardened — prove
 it." A documented runbook (`docs/SECURITY_QA.md`, operator-local) and a
@@ -216,32 +250,12 @@ state continuously; the runbook attacks the state to confirm the
 assumptions the monitor makes are actually enforced. Both feed into a
 single "security score" surface on the dashboard.
 
-**Status.** Not started. Higher leverage *after* the posture monitor
-lands (so the runbook has a baseline state to confirm), but the two
-can be specified in parallel.
-
-### Backup orchestration
-
-restic to S3-compatible storage (Hetzner Storage Box, Backblaze B2, etc.),
-daily snapshots, 30/12/12 retention, encrypted with
-`BACKUP_ENCRYPTION_PASSPHRASE`. Volumes registered in
-`platform/backup/registry.yml`. Restore runbook.
-
-**Status.** Stubbed in `docs/BACKUP_RESTORE.md`. Not implemented. Higher
-priority now: Authelia users added via `add-user.sh` live only in gitignored
-runtime files (`users_database.yml`, the Authelia SQLite DB,
-`platform/authelia/secrets/`). Without backups, a from-zero recovery
-restores only the seeded operator.
-
-### Alertmanager + SMTP routing
-
-Prometheus alert rules per-app, alertmanager routing severities to email
-(P0–P3). Quiet hours configurable. Foundation for adding Slack/Telegram
-later.
-
-**Status.** Stubbed in `docs/ALERTING.md`. Not implemented.
+**Status.** Not started.
 
 ### Authelia email onboarding (SMTP notifier)
+
+**Priority.** P3. Shares the SMTP wiring with the Alertmanager item above —
+land SMTP once for both.
 
 Switch Authelia's notifier from `filesystem` to `smtp` so a new user gets a
 password-reset link by email (they set their own password) and can self-enrol
@@ -250,27 +264,7 @@ conveying the password out of band. Authelia cannot delegate to Google or
 other social logins (it is an OIDC provider, not a relying party), so an
 SMTP-driven self-service flow is the realistic "email onboarding" path.
 
-**Status.** Not started. `add-user.sh` is the current path. Shares the SMTP
-wiring with the Alertmanager item above — land SMTP once for both.
-
-### One-shot seed installer (`bootstrap/seed.sh`)
-
-Curl-able installer for a brand-new VPS that fetches the repo to
-`/opt/infra` and runs `bootstrap.sh` end-to-end. Cuts the manual M1–M5 setup
-to a single command.
-
-**Status.** Not started.
-
-## Later
-
-- **Suricata IDS feeding ntopng** — host-level intrusion detection.
-- **Per-app Caddyfile fragments** under `platform/caddy/fragments/` — formal
-  contract for applications to declare their public routes and Authelia
-  policies (`one_factor` / `two_factor` / `bypass`).
-- **WebAuthn / hardware-key second factor** — Authelia supports passkeys
-  and FIDO2 in addition to TOTP. Promote once TOTP rollout is stable.
-- **Migration to NixOS or similar** for fully declarative host state — only
-  if/when the current bash-script approach hits a wall.
+**Status.** Not started. `add-user.sh` is the current path.
 
 ## How to use this file
 
